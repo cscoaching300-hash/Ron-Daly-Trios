@@ -463,6 +463,7 @@ app.post('/api/players', requireAuth, (req, res) => {
   res.json(row);
 });
 
+// UPDATE PLAYER — recompute hcp from average when not explicitly provided
 app.put('/api/players/:id', requireAuth, (req, res) => {
   db.read();
   const id = +req.params.id;
@@ -471,20 +472,31 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   const p = (db.data.players || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!p) return res.status(404).json({ error: 'player not found' });
 
-  if (name != null)    p.name = String(name);
+  const league = normalizeLeague(req.league);
+
+  if (name != null) p.name = String(name);
   if (average != null) p.average = +average || 0;
-  if (hcp === '' || hcp == null) p.hcp = null;
-  else if (hcp != null) p.hcp = +hcp || 0;
+
+  if (hcp === '' || hcp == null) {
+    // no explicit hcp -> derive from current average (0 in scratch mode)
+    p.hcp = league.mode === 'scratch' ? 0 : playerHandicapPerGame(league, p.average, null);
+  } else {
+    // explicit override
+    p.hcp = +hcp || 0;
+  }
+
   if (gender === 'M' || gender === 'F' || gender === null) p.gender = gender ?? null;
 
   if (teamId !== undefined) {
-    db.data.team_players = (db.data.team_players || []).filter(tp => !(tp.league_id === req.league.id && tp.player_id === id));
+    db.data.team_players = (db.data.team_players || [])
+      .filter(tp => !(tp.league_id === req.league.id && tp.player_id === id));
     if (teamId) db.data.team_players.push({ league_id: req.league.id, team_id: +teamId, player_id: id });
   }
 
   db.write();
   res.json(p);
 });
+
 
 app.delete('/api/players/:id', requireAuth, (req, res) => {
   db.read();
@@ -555,26 +567,52 @@ app.get('/api/players-with-teams', (req, res) => {
 
   const stats = league ? computePlayerStatsForLeague(league, upToWeek) : new Map();
 
-  const rows = players.map(p => {
-    const team_id = firstTeamByPlayer.get(p.id) ?? null;
-    const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
+let touched = false;
 
-    const hcpDisplay = displayHcpFor(league, upToWeek, p, st.ave);
+const rows = players.map(p => {
+  const team_id = firstTeamByPlayer.get(p.id) ?? null;
+  const st = stats.get(p.id) || {
+    gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0
+  };
 
-    return {
-      id: p.id,
-      name: p.name,
-      gender: p.gender || null,
-      hcp: hcpDisplay,
-      team_id,
-      team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
-      gms: st.gms, pts: st.pts, ave: st.ave,
-      pinss: st.pinss, pinsh: st.pinsh,
-      hgs: st.hgs, hgh: st.hgh, hss: st.hss, hsh: st.hsh
-    };
-  }).sort((a,b)=> a.team_name.localeCompare(b.team_name) || a.name.localeCompare(b.name));
+  // value we show in the UI
+  const hcpDisplay = displayHcpFor(league, upToWeek, p, st.ave);
 
-  res.json(rows);
+  // freeze window check
+  const start  = league.hcpLockFromWeek;
+  const len    = league.hcpLockWeeks;
+  const end    = start + Math.max(0, len) - 1;
+  const inFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
+
+  // consider stored 0 as "unset" when we have an average
+  const stored = p.hcp;
+  const storedUnset = !(stored != null && Number.isFinite(+stored) && +stored >= 0) ||
+                      (+stored === 0 && (+p.average || 0) > 0);
+
+  // keep players.hcp synced to the display value outside freeze
+  if (!inFreeze) {
+    if (storedUnset || +p.hcp !== +hcpDisplay) {
+      p.hcp = league.mode === 'scratch' ? 0 : +hcpDisplay;
+      touched = true;
+    }
+  }
+
+  return {
+    id: p.id,
+    name: p.name,
+    gender: p.gender || null,
+    hcp: hcpDisplay,
+    team_id,
+    team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
+    gms: st.gms, pts: st.pts, ave: st.ave,
+    pinss: st.pinss, pinsh: st.pinsh,
+    hgs: st.hgs, hgh: st.hgh, hss: st.hss, hsh: st.hsh
+  };
+}).sort((a,b)=> a.team_name.localeCompare(b.team_name) || a.name.localeCompare(b.name));
+
+if (touched) db.write();
+res.json(rows);
+
 });
 
 /* ===== Matches (list & simple score update) ===== */
