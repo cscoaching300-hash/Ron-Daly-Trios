@@ -1,12 +1,12 @@
 services:
   - type: web
-    name: bowling-league-serverjs
+    name: bowling-league
     env: node
-    plan: free
     buildCommand: |
-      npm install
+      npm ci
       npm run build
-    startCommand: npm start
+    startCommand: node server.js
+    plan: free
     autoDeploy: true
     envVars:
       - key: NODE_ENV
