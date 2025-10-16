@@ -1,6 +1,18 @@
-// server.js (top)
+// server.js (top of file)
+const express = require('express');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
+const { LowSync } = require('lowdb');
+const { JSONFileSync } = require('lowdb/node');
+
+const app = express();               // <-- must exist and be above any app.use/app.get
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 10000;
+
 
 // ----- DATA DIR (persistent on Render) -----
 const DATA_DIR = process.env.DATA_DIR || __dirname;  // Render will set DATA_DIR=/data
