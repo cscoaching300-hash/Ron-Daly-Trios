@@ -222,7 +222,7 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const league = normalizeLeague(leagueRaw);
   if (league.mode === 'scratch') return 0;
 
-  // If no sheet-derived average yet, fall back to the starting average
+  // fallback to starting average if no sheet-derived avg yet
   const aveSource = (Number.isFinite(+aveForWeek) && +aveForWeek > 0)
     ? +aveForWeek
     : (+player.average || 0);
@@ -231,17 +231,17 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
 
-  const withinFreeze =
-    len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
+  const withinFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
 
-  // ✅ treat stored handicap as valid only if it’s actually present (not null/undefined)
+  // stored handicap counts only if it actually exists (not null/undefined)
   const hasStored =
     player.hcp !== null && player.hcp !== undefined &&
     Number.isFinite(+player.hcp) && +player.hcp >= 0;
 
-  if (withinFreeze && hasStored) return +player.hcp;  // use stored during freeze
+  if (withinFreeze && hasStored) return +player.hcp;
   return playerHandicapPerGame(league, aveSource, null);
 }
+
 
 
 // Handicap used on the match sheet for a given week (freeze-aware)
@@ -250,7 +250,6 @@ function hcpForWeek(leagueRaw, weekNumber, player) {
   const start = league.hcpLockFromWeek;
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
-
   const withinFreeze = len > 0 && weekNumber >= start && weekNumber <= end;
 
   const hasStored =
