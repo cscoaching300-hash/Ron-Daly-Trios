@@ -3,11 +3,10 @@ services:
     name: bowling-league
     env: node
     plan: free
-    buildCommand: |
-      npm ci
-      npm run build
+    buildCommand: npm run render-build
     startCommand: node server.js
-    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"   # ensures devDependencies (vite) are installed

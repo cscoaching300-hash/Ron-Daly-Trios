@@ -1,47 +1,27 @@
+// client/src/pages/EnterScores.jsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { getTeams, getMatchSheet, saveMatchSheet } from '../api'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
+import { getAuthHeaders } from '../lib/auth.js'
 
 const cell = { padding: 6, borderBottom: '1px solid var(--border)' }
 const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
-import { useSearchParams } from 'react-router-dom'
-import { getAuthHeaders } from '../lib/auth.js'
-
-const [params] = useSearchParams()
-const weekNumber = params.get('week')
-const homeTeamId = params.get('homeTeamId')
-const awayTeamId = params.get('awayTeamId')
-
-// on mount: if all three exist, fetch the saved sheet and populate your local state
-useEffect(() => {
-  if (!weekNumber || !homeTeamId || !awayTeamId) return
-  const qs = new URLSearchParams({ weekNumber, homeTeamId, awayTeamId }).toString()
-  fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
-    .then(r => r.ok ? r.json() : null)
-    .then(s => {
-      if (!s) return
-      // set your local state: e.g. setHomeRows(s.homeGames); setAwayRows(s.awayGames); etc.
-    })
-    .catch(()=>{})
-}, [weekNumber, homeTeamId, awayTeamId])
-
-
 function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}>
       <option value="">— choose —</option>
       <optgroup label="Team">
-        {teamOptions.map(p => (
+        {(teamOptions || []).map(p => (
           <option key={`t-${p.id}`} value={p.id} disabled={disabledIds.has(p.id)}>
             {p.name} {p.hcp ? `(${p.hcp})` : ''}
           </option>
         ))}
       </optgroup>
       <optgroup label="Substitutes">
-        {subOptions.map(p => (
+        {(subOptions || []).map(p => (
           <option key={`s-${p.id}`} value={p.id} disabled={disabledIds.has(p.id)}>
             {p.name} {p.hcp ? `(${p.hcp})` : ''}
           </option>
@@ -57,8 +37,7 @@ function pointsOutcome(a, b, winPts, drawPts) {
 }
 
 /**
- * TeamTable renders one side (home or away).
- * It also shows per-bowler singles points by comparing rows with the "opposite" rows from the opponent.
+ * One side of the sheet (home/away)
  */
 function TeamTable({
   title,
@@ -67,11 +46,11 @@ function TeamTable({
   values,           // [{playerId, g1,g2,g3, hcp}]
   setValues,
   gamesPerWeek,
-  opponentRowsProcessed,      // processed rows from the other team (to compare)
+  opponentRowsProcessed,
   indivWin,
   indivDraw
 }) {
-  // ensure at least 3 slots
+  // ensure at least 3 slots on first mount for this table
   useEffect(() => {
     if (!values.length) {
       setValues([
@@ -80,7 +59,8 @@ function TeamTable({
         { playerId: '', g1:'', g2:'', g3:'', hcp: 0 }
       ])
     }
-  }, []) // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const byId = useMemo(() => {
     const map = new Map()
@@ -93,7 +73,7 @@ function TeamTable({
     [values]
   )
 
-  // process rows with computed fields
+  // processed rows with computed fields
   const rows = values.map(v => {
     const s1 = num(v.g1), s2 = num(v.g2), s3 = num(v.g3)
     const h  = num(v.hcp)
@@ -109,10 +89,9 @@ function TeamTable({
   const singlesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
-    const [g1hA, g1hB] = pointsOutcome(r.g1h, opp.g1h, indivWin, indivDraw)
-    const [g2hA, g2hB] = pointsOutcome(r.g2h, opp.g2h, indivWin, indivDraw)
-    const [g3hA, g3hB] = pointsOutcome(r.g3h, opp.g3h, indivWin, indivDraw)
-    // return this side's points
+    const [g1hA] = pointsOutcome(r.g1h, opp.g1h, indivWin, indivDraw)
+    const [g2hA] = pointsOutcome(r.g2h, opp.g2h, indivWin, indivDraw)
+    const [g3hA] = pointsOutcome(r.g3h, opp.g3h, indivWin, indivDraw)
     return g1hA + g2hA + g3hA
   })
 
@@ -228,28 +207,63 @@ export default function EnterScores() {
   const [awayVals, setAwayVals] = useState([])
 
   const location = useLocation()
+  const [params] = useSearchParams()
 
+  // Load teams once
   useEffect(() => { getTeams().then(setTeams) }, [])
 
+  // Sync state with URL params (?week=&homeTeamId=&awayTeamId=)
   useEffect(() => {
-    const q = new URLSearchParams(location.search)
-    const teamA = q.get('teamA')
-    const teamB = q.get('teamB')
-    const week  = q.get('week')
-    if (teamA) setHomeId(teamA)
-    if (teamB) setAwayId(teamB)
-    if (week)  setWeekNumber(week)
-    if (teamA && teamB && week) setTimeout(() => { load() }, 0)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search])
+    const pWeek = params.get('week')
+    const pHome = params.get('homeTeamId') || params.get('teamA')
+    const pAway = params.get('awayTeamId') || params.get('teamB')
 
-  const load = async () => {
-    if (!weekNumber || !homeId || !awayId) return
-    const data = await getMatchSheet(+weekNumber, +homeId, +awayId)
+    if (pWeek) setWeekNumber(pWeek)
+    if (pHome) setHomeId(pHome)
+    if (pAway) setAwayId(pAway)
+
+    // if all present, auto-load
+    if (pWeek && pHome && pAway) {
+      load(+pWeek, +pHome, +pAway)
+      // try to fetch saved sheet and prefill
+      const qs = new URLSearchParams({ weekNumber: pWeek, homeTeamId: pHome, awayTeamId: pAway }).toString()
+      fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
+        .then(r => (r.ok ? r.json() : null))
+        .then(s => {
+          if (!s) return
+          const shape = r => ({
+            playerId: String(r.playerId || ''),
+            g1: String(r.g1 || ''),
+            g2: String(r.g2 || ''),
+            g3: String(r.g3 || ''),
+            hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0
+          })
+          setHomeVals((s.homeGames || []).map(shape))
+          setAwayVals((s.awayGames || []).map(shape))
+        })
+        .catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, params])
+
+  const load = async (wk = +weekNumber, h = +homeId, a = +awayId) => {
+    if (!wk || !h || !a) return
+    const data = await getMatchSheet(+wk, +h, +a)
     setSheet(data)
-    // seed with 3 empty rows per side (user can add/remove)
-    setHomeVals([{playerId:'',g1:'',g2:'',g3:'',hcp:0},{playerId:'',g1:'',g2:'',g3:'',hcp:0},{playerId:'',g1:'',g2:'',g3:'',hcp:0}])
-    setAwayVals([{playerId:'',g1:'',g2:'',g3:'',hcp:0},{playerId:'',g1:'',g2:'',g3:'',hcp:0},{playerId:'',g1:'',g2:'',g3:'',hcp:0}])
+    if (!homeVals.length) {
+      setHomeVals([
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+      ])
+    }
+    if (!awayVals.length) {
+      setAwayVals([
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+      ])
+    }
   }
 
   const gamesPerWeek = +sheet?.league?.gamesPerWeek || 3
@@ -276,7 +290,7 @@ export default function EnterScores() {
     : homeSeries > awaySeries ? { home:teamWin, away:0 }
     : { home:0, away:teamWin }
 
-  // singles totals across the table (sum of each row’s H2H points)
+  // singles totals across the table
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
@@ -294,10 +308,12 @@ export default function EnterScores() {
 
   const save = async () => {
     if (!sheet) return alert('Pick week and teams, then Load.')
-    const clean = rows => rows.filter(r => r.playerId).map(r => ({
-      playerId: +r.playerId,
-      g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp)
-    }))
+    const clean = rows => rows
+      .filter(r => r.playerId)
+      .map(r => ({
+        playerId: +r.playerId,
+        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp)
+      }))
     const payload = {
       weekNumber: +weekNumber,
       homeTeamId: +homeId,
@@ -382,9 +398,10 @@ export default function EnterScores() {
       </section>
 
       <div style={{display:'flex', gap:8}}>
-        <button className="button" onClick={load}>Load sheet</button>
+        <button className="button" onClick={() => load()}>Load sheet</button>
         <button className="button primary" onClick={save}>Save sheet</button>
       </div>
     </div>
   )
 }
+
