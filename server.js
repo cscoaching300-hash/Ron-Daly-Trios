@@ -1,4 +1,4 @@
-// server.js (top of file)
+// server.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -7,31 +7,50 @@ const multer = require('multer');
 const { LowSync } = require('lowdb');
 const { JSONFileSync } = require('lowdb/node');
 
-const app = express();               // <-- must exist and be above any app.use/app.get
+const app = express();
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
 
+/* ================================
+   DATA DIR (persistent on Render)
+   ================================ */
+const DATA_DIR = process.env.DATA_DIR || __dirname; // Render can set DATA_DIR=/data
 
-// ----- DATA DIR (persistent on Render) -----
-const DATA_DIR = process.env.DATA_DIR || __dirname;  // Render will set DATA_DIR=/data
+/* ===== DB (LowDB) ===== */
+const dbFile = path.join(DATA_DIR, 'db.json');
 
-// ----- DB -----
-const dbFile = path.join(DATA_DIR, 'db.json');       // <— changed from __dirname
+const defaultData = {
+  leagues: [],
+  players: [],
+  teams: [],
+  team_players: [],
+  weeks: [],
+  matches: [],
+  sheets: [], // per-week saved bowler games
+};
 
-// ----- Uploads (logos) -----
-const uploadsDir = path.join(DATA_DIR, 'uploads');   // <— changed from __dirname
+const adapter = new JSONFileSync(dbFile);
+const db = new LowSync(adapter, { defaultData });
+db.read();
+if (!db.data || typeof db.data !== 'object') db.data = { ...defaultData };
+for (const k of Object.keys(defaultData)) {
+  if (!Array.isArray(db.data[k])) db.data[k] = [];
+}
+db.write();
+
+/* ===== Uploads (logos) ===== */
+const uploadsDir = path.join(DATA_DIR, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
+const upload = multer({ dest: uploadsDir });
 
-
+/* ===== Helpers ===== */
 function nextId(collection) {
   const arr = db.data[collection] || [];
   return arr.length ? Math.max(...arr.map(r => r.id || 0)) + 1 : 1;
 }
-
-// ---------- helpers ----------
 const num = (v) => (Number.isFinite(+v) ? +v : 0);
 
 function tokenFor(leagueId, pin) {
@@ -43,6 +62,7 @@ function getAuth(req) {
   return { leagueId, token };
 }
 function requireAuth(req, res, next) {
+  db.read();
   const { leagueId, token } = getAuth(req);
   const league = (db.data.leagues || []).find(l => l.id === leagueId);
   if (!league) return res.status(401).json({ error: 'invalid league' });
@@ -51,7 +71,7 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Normalize league so handicap math never silently zeroes out
+/* ===== League normalization to protect handicap math ===== */
 function normalizeLeague(league) {
   const safe = { ...(league || {}) };
   const baseNum = +safe.handicapBase;
@@ -73,7 +93,7 @@ function normalizeLeague(league) {
   return safe;
 }
 
-// Handicap per game for a player
+/* ===== Handicap/Stats utils ===== */
 function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
   if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp; // caller can force stored
   const league = normalizeLeague(leagueRaw);
@@ -114,7 +134,6 @@ function teamPointsFor(leagueRaw, homePins, awayPins) {
   return homePins > awayPins ? [league.teamPointsWin, 0] : [0, league.teamPointsWin];
 }
 
-// compute value used for head-to-head (game) comparison
 function cmpVal(leagueRaw, g, hcp) {
   const league = normalizeLeague(leagueRaw);
   const scratch = num(g);
@@ -127,9 +146,7 @@ function rowHandicapSeries(leagueRaw, r){
 }
 
 /**
- * Build a per-player stats map from db.data.sheets for this league.
- * Returns Map<playerId, { gms, pts, pinss, pinsh, hgs, hgh, hss, hsh, ave }>
- * If upToWeek is provided, counts only weeks <= upToWeek.
+ * Build per-player stats from sheets; if upToWeek provided, only <= upToWeek.
  */
 function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   const league = normalizeLeague(leagueRaw);
@@ -214,10 +231,8 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
     upToWeek >= start && upToWeek <= end;
 
   if (withinFreeze && Number.isFinite(+player.hcp) && +player.hcp >= 0) {
-    // During freeze, show the stored value if present
-    return +player.hcp;
+    return +player.hcp; // show stored during freeze
   }
-  // Otherwise compute from the average up to that week
   return playerHandicapPerGame(league, aveForWeek, null);
 }
 
@@ -281,10 +296,10 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   }
 }
 
-// ----- Health -----
+/* ===== Health ===== */
 app.get('/api/health', (req, res) => res.json({ ok: true, at: new Date().toISOString() }));
 
-// ----- Leagues -----
+/* ===== Leagues ===== */
 app.get('/api/leagues', (req, res) => { db.read(); res.json(db.data.leagues); });
 
 app.post('/api/leagues', (req, res) => {
@@ -364,6 +379,7 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
 
 // Upload logo
 app.post('/api/leagues/:id/logo', requireAuth, upload.single('logo'), (req, res) => {
+  db.read();
   const id = +req.params.id;
   const league = (db.data.leagues || []).find(l => l.id === id);
   if (!league) return res.status(404).json({ error: 'league not found' });
@@ -377,7 +393,7 @@ app.post('/api/leagues/:id/logo', requireAuth, upload.single('logo'), (req, res)
   res.json({ ok: true, logo: league.logo });
 });
 
-// ----- Login -----
+/* ===== Login ===== */
 app.post('/api/login', (req, res) => {
   db.read();
   const { leagueId, pin } = req.body || {};
@@ -387,7 +403,7 @@ app.post('/api/login', (req, res) => {
   res.json({ token: tokenFor(+leagueId, league.pin), league: { id: league.id, name: league.name, logo: league.logo } });
 });
 
-// ----- Players -----
+/* ===== Players ===== */
 app.get('/api/players', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -397,10 +413,10 @@ app.get('/api/players', (req, res) => {
 });
 
 app.post('/api/players', requireAuth, (req, res) => {
+  db.read();
   const { name, average = 0, hcp = null, gender = null, teamId = null } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
 
-  db.read();
   const row = {
     id: nextId('players'),
     league_id: req.league.id,
@@ -422,9 +438,9 @@ app.post('/api/players', requireAuth, (req, res) => {
 });
 
 app.put('/api/players/:id', requireAuth, (req, res) => {
+  db.read();
   const id = +req.params.id;
   const { name, average, hcp, gender, teamId } = req.body || {};
-  db.read();
 
   const p = (db.data.players || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!p) return res.status(404).json({ error: 'player not found' });
@@ -445,8 +461,8 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
 });
 
 app.delete('/api/players/:id', requireAuth, (req, res) => {
-  const id = +req.params.id;
   db.read();
+  const id = +req.params.id;
 
   const p = (db.data.players || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!p) return res.status(404).json({ error: 'player not found' });
@@ -458,7 +474,7 @@ app.delete('/api/players/:id', requireAuth, (req, res) => {
   res.json({ ok: true, id });
 });
 
-// ----- Teams -----
+/* ===== Teams ===== */
 app.get('/api/teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -468,20 +484,20 @@ app.get('/api/teams', (req, res) => {
 });
 
 app.post('/api/teams', requireAuth, (req, res) => {
+  db.read();
   const { name, playerIds = [] } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
-  db.read();
   const id = nextId('teams');
   db.data.teams.push({ id, league_id: req.league.id, name, created_at: new Date().toISOString() });
   for (const pid of playerIds) db.data.team_players.push({ league_id: req.league.id, team_id: id, player_id: +pid });
   db.write(); res.json({ id, name });
 });
 
-// ----- Weeks -----
+/* ===== Weeks ===== */
 app.post('/api/weeks', requireAuth, (req, res) => {
+  db.read();
   const { weekNumber, date = null, pairings = [] } = req.body || {};
   if (!weekNumber) return res.status(400).json({ error: 'weekNumber required' });
-  db.read();
   const weekId = nextId('weeks');
   db.data.weeks.push({ id: weekId, league_id: req.league.id, week_number: +weekNumber, date });
   for (const p of pairings) {
@@ -495,7 +511,7 @@ app.post('/api/weeks', requireAuth, (req, res) => {
   db.write(); res.json({ id: weekId, weekNumber, date });
 });
 
-// ----- Players directory with team & live stats (WEEK-AWARE, NO WRITES) -----
+/* ===== Players directory with team & live stats (WEEK-AWARE, NO WRITES) ===== */
 app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -535,7 +551,7 @@ app.get('/api/players-with-teams', (req, res) => {
   res.json(rows);
 });
 
-// ----- Matches (list & simple score update) -----
+/* ===== Matches (list & simple score update) ===== */
 app.get('/api/matches', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -552,9 +568,9 @@ app.get('/api/matches', (req, res) => {
 });
 
 app.post('/api/matches/:id/score', requireAuth, (req, res) => {
+  db.read();
   const id = +req.params.id;
   const { homePins = 0, awayPins = 0 } = req.body || {};
-  db.read();
   const m = (db.data.matches || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!m) return res.status(404).json({ error: 'match not found' });
 
@@ -568,7 +584,7 @@ app.post('/api/matches/:id/score', requireAuth, (req, res) => {
   res.json({ id, homePins: m.home_score, awayPins: m.away_score, homePoints: homePts, awayPoints: awayPts });
 });
 
-// ----- Match Sheet (per-week, two teams, per-bowler games) -----
+/* ===== Match Sheet (per-week, two teams, per-bowler games) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
@@ -686,7 +702,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   res.json({ ok: true, matchId: match.id });
 });
 
-// ===== Sheet-driven totals for team standings =====
+/* ===== Sheet-driven totals for team standings ===== */
 const sSeries = r => (num(r.g1) + num(r.g2) + num(r.g3));
 const hSeries = r => (num(r.g1)+num(r.hcp) + num(r.g2)+num(r.hcp) + num(r.g3)+num(r.hcp));
 
@@ -704,21 +720,21 @@ function sheetTotalsForMatch(leagueRaw, match) {
   if (!sheet) return null;
 
   const homeRows = sheet.homeGames || [];
-  theAwayRows = sheet.awayGames || [];
+  const awayRows = sheet.awayGames || [];
 
   const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
-  const awayScratch = theAwayRows.reduce((a,r)=>a+sSeries(r), 0);
+  const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
   const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
-  const awayHandicap = theAwayRows.reduce((a,r)=>a+hSeries(r), 0);
+  const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(r), 0);
 
   const homeHgs = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
-  const awayHgs = Math.max(0, ...theAwayRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
+  const awayHgs = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
   const homeHgh = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
-  const awayHgh = Math.max(0, ...theAwayRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
+  const awayHgh = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
   const homeHss = Math.max(0, ...homeRows.map(r => sSeries(r)));
-  const awayHss = Math.max(0, ...theAwayRows.map(r => sSeries(r)));
+  const awayHss = Math.max(0, ...awayRows.map(r => sSeries(r)));
   const homeHsh = Math.max(0, ...homeRows.map(r => hSeries(r)));
-  const awayHsh = Math.max(0, ...theAwayRows.map(r => hSeries(r)));
+  const awayHsh = Math.max(0, ...awayRows.map(r => hSeries(r)));
 
   return {
     homeScratch, awayScratch,
@@ -727,7 +743,7 @@ function sheetTotalsForMatch(leagueRaw, match) {
   };
 }
 
-// ----- Standings (teams) (WEEK-AWARE, NO WRITES) -----
+/* ===== Standings (teams) (WEEK-AWARE, NO WRITES) ===== */
 app.get('/api/standings', (req, res) => {
   try {
     db.read();
@@ -792,7 +808,7 @@ app.get('/api/standings', (req, res) => {
   }
 });
 
-// ----- Individual standings (by team) (WEEK-AWARE, NO WRITES) -----
+/* ===== Individual standings (by team) (WEEK-AWARE, NO WRITES) ===== */
 app.get('/api/standings/players', (req, res) => {
   try {
     db.read();
@@ -841,7 +857,7 @@ app.get('/api/standings/players', (req, res) => {
   }
 });
 
-// ===== Archive / Sheets =====
+/* ===== Archive / Sheets ===== */
 
 // List weeks (with how many sheets saved per week)
 app.get('/api/weeks', (req, res) => {
@@ -883,9 +899,9 @@ app.get('/api/sheets', (req, res) => {
       const totals = (() => {
         const homeRows = s.homeGames || [];
         const awayRows = s.awayGames || [];
-        const num = v => (Number.isFinite(+v) ? +v : 0);
-        const sSeries = r => (num(r.g1) + num(r.g2) + num(r.g3));
-        const hSeries = r => (num(r.g1)+num(r.hcp) + num(r.g2)+num(r.hcp) + num(r.g3)+num(r.hcp));
+        const nn = v => (Number.isFinite(+v) ? +v : 0);
+        const sSeries = r => (nn(r.g1) + nn(r.g2) + nn(r.g3));
+        const hSeries = r => (nn(r.g1)+nn(r.hcp) + nn(r.g2)+nn(r.hcp) + nn(r.g3)+nn(r.hcp));
         const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
         const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
         const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
@@ -954,14 +970,13 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   res.json({ ok: true, removed: before - after });
 });
 
-
-// ----- Serve client -----
+/* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
 });
 
-// ----- Start -----
+/* ===== Start ===== */
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
