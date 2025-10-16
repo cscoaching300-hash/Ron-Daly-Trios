@@ -222,6 +222,11 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const league = normalizeLeague(leagueRaw);
   if (league.mode === 'scratch') return 0;
 
+  // If no sheet-derived average yet, fall back to the starting average
+  const aveSource = (Number.isFinite(+aveForWeek) && +aveForWeek > 0)
+    ? +aveForWeek
+    : (+player.average || 0);
+
   const start = league.hcpLockFromWeek;
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
@@ -233,7 +238,7 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   if (withinFreeze && Number.isFinite(+player.hcp) && +player.hcp >= 0) {
     return +player.hcp; // show stored during freeze
   }
-  return playerHandicapPerGame(league, aveForWeek, null);
+  return playerHandicapPerGame(league, aveSource, null);
 }
 
 // Handicap used on the match sheet for a given week (freeze-aware)
@@ -412,25 +417,31 @@ app.get('/api/players', (req, res) => {
     .sort((a,b)=> a.name.localeCompare(b.name)));
 });
 
+// CREATE PLAYER — computes initial handicap from starting average unless manual hcp provided
 app.post('/api/players', requireAuth, (req, res) => {
   db.read();
+  const league = normalizeLeague(req.league);
   const { name, average = 0, hcp = null, gender = null, teamId = null } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
 
+  const initialHcp = Number.isFinite(+hcp)
+    ? +hcp
+    : playerHandicapPerGame(league, +average || 0, null);
+
   const row = {
     id: nextId('players'),
-    league_id: req.league.id,
+    league_id: league.id,
     name: String(name),
     average: +average || 0,
-    hcp: (hcp === '' || hcp == null) ? null : (+hcp || 0),
+    hcp: initialHcp,
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
   db.data.players.push(row);
 
   if (teamId) {
-    db.data.team_players = (db.data.team_players || []).filter(tp => !(tp.league_id === req.league.id && tp.player_id === row.id));
-    db.data.team_players.push({ league_id: req.league.id, team_id: +teamId, player_id: row.id });
+    db.data.team_players = (db.data.team_players || []).filter(tp => !(tp.league_id === league.id && tp.player_id === row.id));
+    db.data.team_players.push({ league_id: league.id, team_id: +teamId, player_id: row.id });
   }
 
   db.write();
