@@ -222,7 +222,7 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const league = normalizeLeague(leagueRaw);
   if (league.mode === 'scratch') return 0;
 
-  // fallback to starting average if no sheet-derived avg yet
+  // Use sheet avg if present, otherwise starting avg on player
   const aveSource = (Number.isFinite(+aveForWeek) && +aveForWeek > 0)
     ? +aveForWeek
     : (+player.average || 0);
@@ -230,15 +230,18 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const start = league.hcpLockFromWeek;
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
-
   const withinFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
 
-  // stored handicap counts only if it actually exists (not null/undefined)
-  const hasStored =
-    player.hcp !== null && player.hcp !== undefined &&
-    Number.isFinite(+player.hcp) && +player.hcp >= 0;
+  // Consider stored 0 as "unset" if we have an average to compute from
+  const stored = player.hcp;
+  const hasStored = (
+    stored !== null && stored !== undefined &&
+    Number.isFinite(+stored) && +stored >= 0 &&
+    !(+stored === 0 && (+player.average || 0) > 0)  // <-- new rule
+  );
 
-  if (withinFreeze && hasStored) return +player.hcp;
+  if (withinFreeze && hasStored) return +stored;
+
   return playerHandicapPerGame(league, aveSource, null);
 }
 
@@ -252,19 +255,23 @@ function hcpForWeek(leagueRaw, weekNumber, player) {
   const end   = start + Math.max(0, len) - 1;
   const withinFreeze = len > 0 && weekNumber >= start && weekNumber <= end;
 
-  const hasStored =
-    player.hcp !== null && player.hcp !== undefined &&
-    Number.isFinite(+player.hcp) && +player.hcp >= 0;
+  const stored = player.hcp;
+  const hasStored = (
+    stored !== null && stored !== undefined &&
+    Number.isFinite(+stored) && +stored >= 0 &&
+    !(+stored === 0 && (+player.average || 0) > 0)  // <-- new rule
+  );
 
   if (withinFreeze) {
     return hasStored
-      ? +player.hcp
+      ? +stored
       : playerHandicapPerGame(league, player.average, null);
   }
   return hasStored
-    ? +player.hcp
+    ? +stored
     : playerHandicapPerGame(league, player.average, null);
 }
+
 
 
 // Recompute player averages up to (and including) a week; and write handicap back post-freeze
