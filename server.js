@@ -231,15 +231,18 @@ function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
 
-  const withinFreeze = (len > 0) &&
-    (upToWeek != null) &&
-    upToWeek >= start && upToWeek <= end;
+  const withinFreeze =
+    len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
 
-  if (withinFreeze && Number.isFinite(+player.hcp) && +player.hcp >= 0) {
-    return +player.hcp; // show stored during freeze
-  }
+  // ✅ treat stored handicap as valid only if it’s actually present (not null/undefined)
+  const hasStored =
+    player.hcp !== null && player.hcp !== undefined &&
+    Number.isFinite(+player.hcp) && +player.hcp >= 0;
+
+  if (withinFreeze && hasStored) return +player.hcp;  // use stored during freeze
   return playerHandicapPerGame(league, aveSource, null);
 }
+
 
 // Handicap used on the match sheet for a given week (freeze-aware)
 function hcpForWeek(leagueRaw, weekNumber, player) {
@@ -247,17 +250,23 @@ function hcpForWeek(leagueRaw, weekNumber, player) {
   const start = league.hcpLockFromWeek;
   const len   = league.hcpLockWeeks;
   const end   = start + Math.max(0, len) - 1;
+
   const withinFreeze = len > 0 && weekNumber >= start && weekNumber <= end;
 
+  const hasStored =
+    player.hcp !== null && player.hcp !== undefined &&
+    Number.isFinite(+player.hcp) && +player.hcp >= 0;
+
   if (withinFreeze) {
-    return Number.isFinite(+player.hcp)
+    return hasStored
       ? +player.hcp
       : playerHandicapPerGame(league, player.average, null);
   }
-  return Number.isFinite(+player.hcp)
+  return hasStored
     ? +player.hcp
     : playerHandicapPerGame(league, player.average, null);
 }
+
 
 // Recompute player averages up to (and including) a week; and write handicap back post-freeze
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
