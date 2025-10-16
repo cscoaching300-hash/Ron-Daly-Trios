@@ -269,12 +269,6 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   }
 }
 
-// ----- Uploads (logos) -----
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-app.use('/uploads', express.static(uploadsDir));
-const upload = multer({ dest: uploadsDir });
-
 // ----- Health -----
 app.get('/api/health', (req, res) => res.json({ ok: true, at: new Date().toISOString() }));
 
