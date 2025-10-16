@@ -565,34 +565,34 @@ app.get('/api/players-with-teams', (req, res) => {
   const firstTeamByPlayer = new Map();
   for (const tp of tps) if (!firstTeamByPlayer.has(tp.player_id)) firstTeamByPlayer.set(tp.player_id, tp.team_id);
 
-  const stats = league ? computePlayerStatsForLeague(league, upToWeek) : new Map();
+ const stats = league ? computePlayerStatsForLeague(league, upToWeek) : new Map();
+
+const base = +league.handicapBase;
+const pct  = (+league.handicapPercent || 0) / 100;
+const start = +league.hcpLockFromWeek || 1;
+const len   = +league.hcpLockWeeks || 0;
+const end   = start + Math.max(0, len) - 1;
+const inFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
 
 let touched = false;
 
 const rows = players.map(p => {
   const team_id = firstTeamByPlayer.get(p.id) ?? null;
-  const st = stats.get(p.id) || {
-    gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0
-  };
+  const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
-  // value we show in the UI
-  const hcpDisplay = displayHcpFor(league, upToWeek, p, st.ave);
+  // Use sheet ave if present, else starting average
+  const ave = st.ave > 0 ? st.ave : (+p.average || 0);
 
-  // freeze window check
-  const start  = league.hcpLockFromWeek;
-  const len    = league.hcpLockWeeks;
-  const end    = start + Math.max(0, len) - 1;
-  const inFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
+  // Direct, explicit formula (ignore stored hcp for the display; respect scratch)
+  const calcHcp = league.mode === 'scratch'
+    ? 0
+    : Math.max(0, Math.round((base - ave) * pct));
 
-  // consider stored 0 as "unset" when we have an average
-  const stored = p.hcp;
-  const storedUnset = !(stored != null && Number.isFinite(+stored) && +stored >= 0) ||
-                      (+stored === 0 && (+p.average || 0) > 0);
-
-  // keep players.hcp synced to the display value outside freeze
+  // Keep DB's players.hcp synced OUTSIDE the freeze window
   if (!inFreeze) {
-    if (storedUnset || +p.hcp !== +hcpDisplay) {
-      p.hcp = league.mode === 'scratch' ? 0 : +hcpDisplay;
+    const stored = Number.isFinite(+p.hcp) ? +p.hcp : -1;
+    if (stored !== calcHcp) {
+      p.hcp = calcHcp;
       touched = true;
     }
   }
@@ -601,7 +601,7 @@ const rows = players.map(p => {
     id: p.id,
     name: p.name,
     gender: p.gender || null,
-    hcp: hcpDisplay,
+    hcp: calcHcp,                 // <- what the UI shows
     team_id,
     team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
     gms: st.gms, pts: st.pts, ave: st.ave,
@@ -612,6 +612,7 @@ const rows = players.map(p => {
 
 if (touched) db.write();
 res.json(rows);
+
 
 });
 
