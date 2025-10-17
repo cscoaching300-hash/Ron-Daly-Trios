@@ -223,29 +223,12 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   return stats;
 }
 
-/* Display handicap (no writes) with freeze rules */
-function displayHcpFor(leagueRaw, upToWeek, player, aveForWeek) {
-  const league = normalizeLeague(leagueRaw);
-  if (league.mode === 'scratch') return 0;
-
-  const aveSource = (Number.isFinite(+aveForWeek) && +aveForWeek > 0)
-    ? +aveForWeek
-    : (+player.average || 0);
-
-  const start = league.hcpLockFromWeek;
-  const len   = league.hcpLockWeeks;
-  const end   = start + Math.max(0, len) - 1;
-  const withinFreeze = len > 0 && upToWeek != null && upToWeek >= start && upToWeek <= end;
-
-  const stored = player.hcp;
-  const hasStored = (
-    stored !== null && stored !== undefined &&
-    Number.isFinite(+stored) && +stored >= 0 &&
-    !(+stored === 0 && (+player.average || 0) > 0)
-  );
-
-  if (withinFreeze && hasStored) return +stored;
-  return playerHandicapPerGame(league, aveSource, null);
+/* Display handicap (read-only) — ALWAYS derived from effective avg */
+function hcpDisplayFromEffectiveAverage(league, effectiveAvg) {
+  if (!league || league.mode === 'scratch') return 0;
+  const base = +league.handicapBase || 200;
+  const pct  = (+league.handicapPercent || 0) / 100;
+  return Math.max(0, Math.round((base - (+effectiveAvg || 0)) * pct));
 }
 
 /* Recompute players as of a cutoff week (or 0 = before season) */
@@ -286,7 +269,7 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
       p.average = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
     }
 
-    // Handicap: honor freeze rules
+    // Handicap: honor freeze window for STORED hcp
     if (inFreeze) {
       if (!Number.isFinite(+p.hcp) || +p.hcp < 0) {
         p.hcp = playerHandicapPerGame(league, p.average, null);
@@ -294,7 +277,6 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
     } else if (pastFreeze || len === 0) {
       p.hcp = playerHandicapPerGame(league, p.average, null);
     } else {
-      // before freeze window but not in it
       p.hcp = playerHandicapPerGame(league, p.average, null);
     }
   }
@@ -416,7 +398,7 @@ app.get('/api/players', (req, res) => {
     .sort((a,b)=> a.name.localeCompare(b.name)));
 });
 
-// CREATE PLAYER — initial handicap from starting average unless manual hcp provided
+// CREATE PLAYER
 app.post('/api/players', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
@@ -447,7 +429,7 @@ app.post('/api/players', requireAuth, (req, res) => {
   res.json(row);
 });
 
-// UPDATE PLAYER — recompute hcp from average when not explicitly provided
+// UPDATE PLAYER
 app.put('/api/players/:id', requireAuth, (req, res) => {
   db.read();
   const id = +req.params.id;
@@ -531,7 +513,7 @@ app.post('/api/weeks', requireAuth, (req, res) => {
   db.write(); res.json({ id: weekId, weekNumber, date });
 });
 
-/* ===== Players directory with team & live stats (READ-ONLY) ===== */
+/* ===== Players directory (READ-ONLY, guaranteed Hcp display) ===== */
 app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -553,13 +535,17 @@ app.get('/api/players-with-teams', (req, res) => {
     const team_id = firstTeamByPlayer.get(p.id) ?? null;
     const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
-    const hcpDisplay = displayHcpFor(league, upToWeek, p, st.ave);
+    // Effective average = live sheet average (if any), else starting/current avg
+    const effectiveAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
+
+    // DISPLAY Hcp is always derived from effective average (no DB writes here)
+    const hcpDisplay = hcpDisplayFromEffectiveAverage(league, effectiveAvg);
 
     return {
       id: p.id,
       name: p.name,
       gender: p.gender || null,
-      hcp: hcpDisplay,
+      hcp: hcpDisplay,                 // UI shows this
       team_id,
       team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
       gms: st.gms, pts: st.pts, ave: st.ave,
@@ -877,7 +863,8 @@ app.get('/api/standings/players', (req, res) => {
         .map(p => {
           const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
-          const hcpDisplay = displayHcpFor(league, upToWeek, p, st.ave);
+          const effAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
+          const hcpDisplay = hcpDisplayFromEffectiveAverage(league, effAvg);
 
           return {
             player_id: p.id,
