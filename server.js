@@ -260,7 +260,8 @@ function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
   return manualOrStartHcp(league, player);
 }
 
-/* Recompute players as of a cutoff week (persisted fields) */
+/* Recompute players as of a cutoff week (persisted fields)
+   IMPORTANT: p.hcp is manual-only and is NOT modified here. */
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const league = normalizeLeague(leagueRaw);
   const sheets = (db.data.sheets || [])
@@ -282,28 +283,14 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
 
   const allPlayers = (db.data.players || []).filter(p => p.league_id === league.id);
 
-  const { start, len, end } = freezeWindow(league);
-  const isFreeze = len > 0 && upToWeek >= start && upToWeek <= end;
-  const afterFreeze = len === 0 ? true : upToWeek > end;
-
   for (const p of allPlayers) {
     const a = agg.get(p.id);
-
     if (a && a.gms) {
       p.average = Math.round((a.pins / a.gms) * 10) / 10;
     } else {
       p.average = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
     }
-
-    if (isFreeze) {
-      if (!Number.isFinite(+p.hcp) || +p.hcp < 0) {
-        p.hcp = manualOrStartHcp(league, p);
-      }
-    } else if (afterFreeze) {
-      p.hcp = playerHandicapPerGame(league, p.average, null);
-    } else {
-      p.hcp = playerHandicapPerGame(league, p.average, null);
-    }
+    // DO NOT modify p.hcp here (manual-only).
   }
 }
 
@@ -396,6 +383,7 @@ app.get('/api/players', (req, res) => {
     .sort((a,b)=> a.name.localeCompare(b.name)));
 });
 
+// CREATE PLAYER
 app.post('/api/players', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
@@ -409,9 +397,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,
-    start_average: startAve,
-    hcp: initialHcp,
+    average: startAve,           // live
+    start_average: startAve,     // freeze fallback
+    hcp: initialHcp,             // manual baseline (can be edited later)
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -426,6 +414,7 @@ app.post('/api/players', requireAuth, (req, res) => {
   res.json(row);
 });
 
+// UPDATE PLAYER (manual handicap is only changed if explicitly provided)
 app.put('/api/players/:id', requireAuth, (req, res) => {
   db.read();
   const id = +req.params.id;
@@ -434,18 +423,16 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   const p = (db.data.players || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!p) return res.status(404).json({ error: 'player not found' });
 
-  const league = normalizeLeague(req.league);
-
   if (name != null) p.name = String(name);
   if (average != null) p.average = +average || 0;
   if (start_average != null) p.start_average = +start_average || 0;
 
-  if (hcp === '' || hcp == null) {
-    if (!inFreeze(league, Number.MAX_SAFE_INTEGER)) {
-      p.hcp = league.mode === 'scratch' ? 0 : playerHandicapPerGame(league, p.average, null);
+  // Manual handicap: update ONLY if the 'hcp' key is present and is a valid number.
+  if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
+    if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
+      p.hcp = Math.max(0, +hcp);
     }
-  } else {
-    p.hcp = +hcp || 0;
+    // else: ignore clears/NaN → keep existing manual p.hcp
   }
 
   if (gender === 'M' || gender === 'F' || gender === null) p.gender = gender ?? null;
@@ -498,6 +485,7 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
+  // displayWeek decides freeze; statsUpTo controls aggregation (null = all weeks)
   const displayWeek = req.query.week != null ? +req.query.week : 0;
   const statsUpTo   = req.query.week != null ? +req.query.week : null;
 
@@ -557,7 +545,8 @@ app.get('/api/match-sheet', (req, res) => {
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
   const rawWeek    = req.query.weekNumber;
-  const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0;
+  theWeek = Number.isFinite(+rawWeek) ? +rawWeek : 0;
+  const weekNumber = theWeek; // keep variable name stable below
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
 
@@ -673,7 +662,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     saved_at: new Date().toISOString()
   });
 
-  // recompute averages + write handicap (freeze respected)
+  // recompute averages ONLY; manual hcp is never changed here
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
@@ -745,7 +734,7 @@ app.get('/api/standings', (req, res) => {
       const played = matches.filter(m => m.home_team_id === t.id || m.away_team_id === t.id);
 
       let pinsS = 0, pinsH = 0, hgs = 0, hgh = 0, hss = 0, hsh = 0, won = 0;
-      let matchesWithSheet = 0; // <- count only matches that have an entered sheet
+      let matchesWithSheet = 0; // count only matches that have an entered sheet
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
@@ -765,8 +754,7 @@ app.get('/api/standings', (req, res) => {
           hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
           hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
         } else {
-          // No sheet entered yet. We still use match fallback for pins & highs
-          // (to keep standings useful), but we DO NOT count these toward Gms.
+          // No sheet yet: still contribute series/hi approximations for readability, but do not count games
           const { scratch, handicap } = seriesForMatch(league, m, t.id);
           pinsS += scratch;
           pinsH += handicap;
@@ -779,7 +767,7 @@ app.get('/api/standings', (req, res) => {
         won += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
-      // IMPORTANT: games only from matches that have sheets, to match players' Gms
+      // games only from matches that have sheets, to match players' Gms
       const games = matchesWithSheet * gamesPerWeek;
 
       return { id: t.id, name: t.name, games, won, pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss };
@@ -847,8 +835,6 @@ app.get('/api/standings/players', (req, res) => {
 
 /* ===== Weeks: entered-only helpers ===== */
 
-//* ===== Weeks: entered-only helpers ===== */
-
 // Distinct weeks that have at least one saved sheet (i.e., entered weeks)
 app.get('/api/weeks/entered', (req, res) => {
   db.read();
@@ -871,7 +857,6 @@ app.get('/api/weeks/entered', (req, res) => {
 
   res.json(result);
 });
-
 
 /* ===== Archive / Sheets ===== */
 app.get('/api/weeks', (req, res) => {
@@ -996,6 +981,7 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     .map(s => s.week_number);
   const lastWeek = remainingWeeks.length ? Math.max(...remainingWeeks) : 0;
 
+  // recompute averages ONLY; manual hcp is never changed here
   recomputePlayersUpToWeek(league, lastWeek);
 
   db.write();
