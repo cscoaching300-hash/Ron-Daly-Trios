@@ -546,8 +546,7 @@ app.get('/api/match-sheet', (req, res) => {
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
   const rawWeek    = req.query.weekNumber;
-  theWeek = Number.isFinite(+rawWeek) ? +rawWeek : 0;
-  const weekNumber = theWeek; // keep variable name stable below
+  const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0;
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
 
@@ -639,48 +638,46 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-// Scratch series (stored like before)
-const sumSeriesScratch = (rows=[]) =>
-  rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
+  // Scratch series (stored like before)
+  const sumSeriesScratch = (rows=[]) =>
+    rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
 
-const homeSeriesScratch = sumSeriesScratch(homeGames || []);
-const awaySeriesScratch = sumSeriesScratch(awayGames || []);
-match.home_score = homeSeriesScratch;
-match.away_score = awaySeriesScratch;
+  const homeSeriesScratch = sumSeriesScratch(homeGames || []);
+  const awaySeriesScratch = sumSeriesScratch(awayGames || []);
+  match.home_score = homeSeriesScratch;
+  match.away_score = awaySeriesScratch;
 
-// --- New: award team points per game + series, in scratch/handicap per league mode ---
-const W = num(league.teamPointsWin);
-const D = num(league.teamPointsDraw);
-const useHandicap = league.mode === 'handicap';
+  // --- Team points per game + series, using HCP in handicap mode ---
+  const W = num(league.teamPointsWin);
+  const D = num(league.teamPointsDraw);
+  const useHandicap = league.mode === 'handicap';
 
-const gameTotal = (rows, gKey) =>
-  (rows || []).reduce(
-    (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
-    0
-  );
+  const gameTotal = (rows, gKey) =>
+    (rows || []).reduce(
+      (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
+      0
+    );
 
-let homePts = 0, awayPts = 0;
-for (const gKey of ['g1','g2','g3']) {
-  const h = gameTotal(homeGames, gKey);
-  const a = gameTotal(awayGames, gKey);
-  if (h > a) homePts += W;
-  else if (a > h) awayPts += W;
+  let homePts = 0, awayPts = 0;
+  for (const gKey of ['g1','g2','g3']) {
+    const h = gameTotal(homeGames, gKey);
+    const a = gameTotal(awayGames, gKey);
+    if (h > a) homePts += W;
+    else if (a > h) awayPts += W;
+    else { homePts += D; awayPts += D; }
+  }
+
+  const seriesTotal = (rows) =>
+    ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
+
+  const hs = seriesTotal(homeGames);
+  const as = seriesTotal(awayGames);
+  if (hs > as) homePts += W;
+  else if (as > hs) awayPts += W;
   else { homePts += D; awayPts += D; }
-}
 
-// Series (scratch or handicap depending on mode)
-const seriesTotal = (rows) =>
-  ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
-
-const hs = seriesTotal(homeGames);
-const as = seriesTotal(awayGames);
-if (hs > as) homePts += W;
-else if (as > hs) awayPts += W;
-else { homePts += D; awayPts += D; }
-
-match.home_points = homePts;
-match.away_points = awayPts;
-
+  match.home_points = homePts;
+  match.away_points = awayPts;
 
   // overwrite sheet for same league/week/teams
   db.data.sheets = (db.data.sheets || []).filter(s =>
@@ -772,7 +769,7 @@ app.get('/api/standings', (req, res) => {
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
-        if (!totals) continue;                // ← skip matches without a sheet
+        if (!totals) continue;                // skip matches without a sheet
 
         matchesWithSheet += 1;
 
@@ -804,7 +801,6 @@ app.get('/api/standings', (req, res) => {
     res.status(500).json({ error: 'standings_failed', message: String(err?.message || err) });
   }
 });
-
 
 /* ===== Individual standings (by team) ===== */
 app.get('/api/standings/players', (req, res) => {
@@ -1026,7 +1022,6 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   res.json({ ok: true, removed: before - after });
 });
 
-
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
 app.get('*', (req, res) => {
@@ -1037,4 +1032,3 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
