@@ -182,6 +182,42 @@ function rowHandicapSeries(leagueRaw, r){
   return gameKeys(league).reduce((s, k) => s + num(r[k]) + addH, 0);
 }
 
+/* ===== NEW: Team points breakdown helper ===== */
+function computeTeamPointsBreakdown(league, homeRows = [], awayRows = []) {
+  const keys = gameKeys(league);
+  const W = num(league.teamPointsWin);
+  const D = num(league.teamPointsDraw);
+  const useH = league.mode === 'handicap';
+
+  const gameTotal = (rows, k) => rows.reduce((s,r)=> s + num(r[k]) + (useH ? num(r.hcp) : 0), 0);
+
+  const games = keys.map((k, i) => {
+    const hPins = gameTotal(homeRows, k);
+    const aPins = gameTotal(awayRows, k);
+    let hPts = 0, aPts = 0;
+    if (hPins > aPins) hPts = W; else if (aPins > hPins) aPts = W; else { hPts = D; aPts = D; }
+    return { game: i+1, homePins: hPins, awayPins: aPins, homePts: hPts, awayPts: aPts };
+    });
+
+  const seriesPins = (rows) => keys.reduce((s,k)=> s + gameTotal(rows, k), 0);
+  const hs = seriesPins(homeRows);
+  const as = seriesPins(awayRows);
+  let sHome = 0, sAway = 0;
+  if (hs > as) sHome = W; else if (as > hs) sAway = W; else { sHome = D; sAway = D; }
+
+  const totals = {
+    homePts: games.reduce((s,g)=>s+g.homePts,0) + sHome,
+    awayPts: games.reduce((s,g)=>s+g.awayPts,0) + sAway,
+    perSideMax: (keys.length + 1) * W
+  };
+
+  return {
+    games,
+    series: { homePins: hs, awayPins: as, homePts: sHome, awayPts: sAway },
+    totals
+  };
+}
+
 /* Build per-player stats from sheets up to week */
 function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   const league = normalizeLeague(leagueRaw);
@@ -412,9 +448,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,           // live (floored)
-    start_average: startAve,     // freeze fallback (floored)
-    hcp: initialHcp,             // manual baseline (can be edited later)
+    average: startAve,
+    start_average: startAve,
+    hcp: initialHcp,
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -442,7 +478,6 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (average != null) p.average = Math.floor(+average || 0);
   if (start_average != null) p.start_average = Math.floor(+start_average || 0);
 
-  // Manual handicap: update ONLY if the 'hcp' key is present and valid.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
       p.hcp = Math.max(0, +hcp);
@@ -499,7 +534,6 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  // displayWeek decides freeze; statsUpTo controls aggregation (null = all weeks)
   const displayWeek = req.query.week != null ? +req.query.week : 0;
   const statsUpTo   = req.query.week != null ? +req.query.week : null;
 
@@ -567,7 +601,6 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
-  // Align stats/effectiveAvg with Players page for the chosen week
   const statsForWeek = computePlayerStatsForLeague(league, weekNumber);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
@@ -589,7 +622,7 @@ app.get('/api/match-sheet', (req, res) => {
       name: p.name,
       average: effAvg,
       gender: p.gender || null,
-      hcp: hcpDisplayForList(league, weekNumber, p, effAvg) // <- identical to Players page
+      hcp: hcpDisplayForList(league, weekNumber, p, effAvg)
     };
   };
 
@@ -602,9 +635,13 @@ app.get('/api/match-sheet', (req, res) => {
   const homeSubs = players.filter(p => !homeRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
   const awaySubs = players.filter(p => !awayRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
 
-  // Provide meta so UI can show "out of X"
-  const W = num(league.teamPointsWin);
-  const D = num(league.teamPointsDraw);
+  // Include scoring meta and, if a sheet exists, include its breakdown
+  const sheet = (db.data.sheets || []).find(s =>
+    s.league_id === league.id && s.week_number === weekNumber &&
+    s.homeTeamId === homeTeamId && s.awayTeamId === awayTeamId
+  );
+  let pointsBreakdown = null;
+  if (sheet) pointsBreakdown = computeTeamPointsBreakdown(league, sheet.homeGames || [], sheet.awayGames || []);
 
   res.json({
     league: {
@@ -621,11 +658,12 @@ app.get('/api/match-sheet', (req, res) => {
     },
     weekNumber,
     scoring: {
-      perGameWin: W,
-      perGameDraw: D,
-      perSideMax: (league.gamesPerWeek + 1) * W, // dynamic: games + series
+      perGameWin: num(league.teamPointsWin),
+      perGameDraw: num(league.teamPointsDraw),
+      perSideMax: (league.gamesPerWeek + 1) * num(league.teamPointsWin),
       usesHandicap: league.mode === 'handicap'
     },
+    pointsBreakdown,
     homeTeam: home ? { id: home.id, name: home.name } : null,
     awayTeam: away ? { id: away.id, name: away.name } : null,
     homeRoster, awayRoster, homeSubs, awaySubs
@@ -662,25 +700,18 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-  // Scratch series (stored like before)
-  const sumSeriesScratch = (rows=[]) =>
-    rows.reduce((s, r) => s + gKeys.reduce((t,k)=>t+num(r[k]),0), 0);
-
+  // Scratch series stored as before
+  const sumSeriesScratch = (rows=[]) => rows.reduce((s, r) => s + gKeys.reduce((t,k)=>t+num(r[k]),0), 0);
   const homeSeriesScratch = sumSeriesScratch(homeGames || []);
   const awaySeriesScratch = sumSeriesScratch(awayGames || []);
   match.home_score = homeSeriesScratch;
   match.away_score = awaySeriesScratch;
 
-  // --- Team points per game + series, using HCP in handicap mode ---
+  // Team points per game + series (hcp when handicap mode)
   const W = num(league.teamPointsWin);
   const D = num(league.teamPointsDraw);
   const useHandicap = league.mode === 'handicap';
-
-  const gameTotal = (rows, gKey) =>
-    (rows || []).reduce(
-      (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
-      0
-    );
+  const gameTotal = (rows, gKey) => (rows || []).reduce((s,r)=> s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0), 0);
 
   let homePts = 0, awayPts = 0;
   for (const gKey of gKeys) {
@@ -690,10 +721,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     else if (a > h) awayPts += W;
     else { homePts += D; awayPts += D; }
   }
-
-  const seriesTotal = (rows) =>
-    gKeys.reduce((s, gk) => s + gameTotal(rows, gk), 0);
-
+  const seriesTotal = (rows) => gKeys.reduce((s,gk)=> s + gameTotal(rows, gk), 0);
   const hs = seriesTotal(homeGames);
   const as = seriesTotal(awayGames);
   if (hs > as) homePts += W;
@@ -703,11 +731,11 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   match.home_points = homePts;
   match.away_points = awayPts;
 
-  // overwrite sheet for same league/week/teams
+  // overwrite sheet
   db.data.sheets = (db.data.sheets || []).filter(s =>
     !(s.league_id===league.id && s.week_number===+weekNumber && s.homeTeamId===+homeTeamId && s.awayTeamId===+awayTeamId)
   );
-  db.data.sheets.push({
+  const sheet = {
     league_id: league.id,
     week_number: +weekNumber,
     homeTeamId: +homeTeamId,
@@ -715,13 +743,17 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     homeGames: homeGames || [],
     awayGames: awayGames || [],
     saved_at: new Date().toISOString()
-  });
+  };
+  db.data.sheets.push(sheet);
 
   // recompute averages ONLY; manual hcp is never changed here
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
-  res.json({ ok: true, matchId: match.id });
+
+  // Return extra breakdown so UI can render a "Team Points" row immediately
+  const pointsBreakdown = computeTeamPointsBreakdown(league, sheet.homeGames, sheet.awayGames);
+  res.json({ ok: true, matchId: match.id, pointsBreakdown });
 });
 
 /* ===== Sheet-driven totals for team standings ===== */
@@ -801,7 +833,7 @@ app.get('/api/standings', (req, res) => {
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
-        if (!totals) continue;                // skip matches without a sheet
+        if (!totals) continue; // skip matches without a sheet
 
         matchesWithSheet += 1;
 
@@ -817,7 +849,6 @@ app.get('/api/standings', (req, res) => {
         hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
         hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
 
-        // Points only count when there is a sheet (and thus a legit result)
         won += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
@@ -895,10 +926,7 @@ app.get('/api/weeks/entered', (req, res) => {
   const allWeeks  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
   const allSheets = (db.data.sheets || []).filter(s => s.league_id === leagueId);
 
-  // Unique week_numbers present in sheets
   const enteredWeekNumbers = Array.from(new Set(allSheets.map(s => s.week_number))).sort((a,b) => a - b);
-
-  // Map weeks by week_number to fetch dates (if weeks were created with dates)
   const byWeekNumber = new Map(allWeeks.map(w => [w.week_number, w]));
 
   const result = enteredWeekNumbers.map(wn => ({
@@ -960,8 +988,8 @@ app.get('/api/sheets', (req, res) => {
         const homeRows = s.homeGames || [];
         const awayRows = s.awayGames || [];
         const nn = v => (Number.isFinite(+v) ? +v : 0);
-        const sumSeries = (rows, useH) => rows.reduce((a,r)=>
-          a + gameKeys({gamesPerWeek:Math.max(1,3)}).reduce((t,k)=>t+nn(r[k])+(useH?nn(r.hcp):0),0),0);
+        const sumSeries = (rows, useH) =>
+          rows.reduce((a,r)=> a + gameKeys({gamesPerWeek:Math.max(1,3)}).reduce((t,k)=>t+nn(r[k])+(useH?nn(r.hcp):0),0),0);
         const homeScratch = sumSeries(homeRows, false);
         const awayScratch = sumSeries(awayRows, false);
         const homeHandicap = sumSeries(homeRows, true);
@@ -1003,7 +1031,11 @@ app.get('/api/sheet', (req, res) => {
   );
 
   if (!sheet) return res.status(404).json({ error: 'sheet not found' });
-  res.json(sheet);
+
+  const league = normalizeLeague((db.data.leagues || []).find(l => l.id === leagueId));
+  const breakdown = computeTeamPointsBreakdown(league, sheet.homeGames || [], sheet.awayGames || []);
+
+  res.json({ ...sheet, pointsBreakdown: breakdown });
 });
 
 app.delete('/api/sheet', requireAuth, (req, res) => {
@@ -1028,7 +1060,6 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'sheet not found' });
   }
 
-  // Reset the corresponding match (keep schedule, clear result)
   const week = (db.data.weeks || []).find(w => w.league_id === league.id && w.week_number === weekNumber);
   if (week) {
     const match = (db.data.matches || []).find(m =>
@@ -1043,7 +1074,6 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     }
   }
 
-  // Recompute averages ONLY; manual hcp is never changed here
   const remainingWeeks = (db.data.sheets || [])
     .filter(s => s.league_id === league.id)
     .map(s => s.week_number);
@@ -1053,7 +1083,6 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   db.write();
   res.json({ ok: true, removed: before - after });
 });
-
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
