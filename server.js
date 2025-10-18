@@ -215,7 +215,8 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
         const aVal = ra ? cmpVal(league, ra[gKey], ra?.hcp) : null;
         const bVal = rb ? cmpVal(league, rb[gKey], rb?.hcp) : null;
 
-        if (ra && num(ra[gKey]) > 0) {
+        // count games/pins/highs ONLY if not blind
+        if (ra && !ra.blind && num(ra[gKey]) > 0) {
           const aS = ensure(+ra.playerId);
           aS.gms += 1;
           aS.pinss += num(ra[gKey]);
@@ -223,7 +224,7 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
           aS.hgs = Math.max(aS.hgs, num(ra[gKey]));
           aS.hgh = Math.max(aS.hgh, num(ra[gKey]) + (league.mode === 'scratch' ? 0 : num(ra.hcp)));
         }
-        if (rb && num(rb[gKey]) > 0) {
+        if (rb && !rb.blind && num(rb[gKey]) > 0) {
           const bS = ensure(+rb.playerId);
           bS.gms += 1;
           bS.pinss += num(rb[gKey]);
@@ -232,7 +233,7 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
           bS.hgh = Math.max(bS.hgh, num(rb[gKey]) + (league.mode === 'scratch' ? 0 : num(rb.hcp)));
         }
 
-        // blind-aware singles points
+        // blind-aware singles points (blind can block points but never gains them)
         if (ra && rb && num(aVal) > 0 && num(bVal) > 0) {
           const aBlind = !!ra.blind;
           const bBlind = !!rb.blind;
@@ -251,12 +252,13 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
         }
       }
 
-      if (ra) {
+      // series/high series updated only for non-blind rows
+      if (ra && !ra.blind) {
         const aS = ensure(+ra.playerId);
         aS.hss = Math.max(aS.hss, rowScratchSeries(ra));
         aS.hsh = Math.max(aS.hsh, rowHandicapSeries(league, ra));
       }
-      if (rb) {
+      if (rb && !rb.blind) {
         const bS = ensure(+rb.playerId);
         bS.hss = Math.max(bS.hss, rowScratchSeries(rb));
         bS.hsh = Math.max(bS.hsh, rowHandicapSeries(league, rb));
@@ -295,7 +297,7 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
 
   const agg = new Map(); // pid -> { gms, pins }
   const bump = (row) => {
-    if (!row?.playerId) return;
+    if (!row?.playerId || row.blind) return; // ignore blind rows entirely
     const pid = +row.playerId;
     const a = agg.get(pid) || { gms:0, pins:0 };
     a.gms  += 3;
@@ -682,7 +684,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-  // Scratch series (stored like before)
+  // Scratch series (stored like before) — blind rows still contribute to match series
   const sumSeriesScratch = (rows=[]) =>
     rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
 
@@ -748,7 +750,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     saved_at: new Date().toISOString()
   });
 
-  // recompute averages ONLY; manual hcp is never changed here
+  // recompute averages ONLY; manual hcp is never changed here (blind rows ignored above)
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
