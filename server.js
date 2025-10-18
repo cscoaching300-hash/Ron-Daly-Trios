@@ -173,6 +173,22 @@ function rowHandicapSeries(leagueRaw, r){
   return rowScratchSeries(r) + (league.mode==='scratch' ? 0 : 3*num(r.hcp));
 }
 
+/* ===== Blind-aware scoring helper ===== */
+function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
+  // both blind => no points
+  if (aBlind && bBlind) return [0, 0];
+
+  // A blind => A never scores; B only if strictly greater
+  if (aBlind && !bBlind) return (bVal > aVal) ? [0, winPts] : [0, 0];
+
+  // B blind => B never scores; A only if strictly greater
+  if (!aBlind && bBlind) return (aVal > bVal) ? [winPts, 0] : [0, 0];
+
+  // neither blind => normal outcome
+  if (aVal === bVal) return [drawPts, drawPts];
+  return (aVal > bVal) ? [winPts, 0] : [0, winPts];
+}
+
 /* Build per-player stats from sheets up to week */
 function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   const league = normalizeLeague(leagueRaw);
@@ -216,13 +232,22 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
           bS.hgh = Math.max(bS.hgh, num(rb[gKey]) + (league.mode === 'scratch' ? 0 : num(rb.hcp)));
         }
 
+        // blind-aware singles points
         if (ra && rb && num(aVal) > 0 && num(bVal) > 0) {
-          if (aVal > bVal) ensure(+ra.playerId).pts += INDIV_WIN;
-          else if (bVal > aVal) ensure(+rb.playerId).pts += INDIV_WIN;
-          else {
-            ensure(+ra.playerId).pts += INDIV_DRAW;
-            ensure(+rb.playerId).pts += INDIV_DRAW;
-          }
+          const aBlind = !!ra.blind;
+          const bBlind = !!rb.blind;
+
+          const [aPts, bPts] = blindAwareOutcome(
+            num(aVal),
+            num(bVal),
+            aBlind,
+            bBlind,
+            INDIV_WIN,
+            INDIV_DRAW
+          );
+
+          if (aPts) ensure(+ra.playerId).pts += aPts;
+          if (bPts) ensure(+rb.playerId).pts += bPts;
         }
       }
 
@@ -613,14 +638,15 @@ function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, use
   const maxRows = Math.max(homeRows.length, awayRows.length);
   let homePts = 0, awayPts = 0;
   const val = (r, key) => (r ? num(r[key]) + (useHandicap ? num(r.hcp) : 0) : 0);
+  const isBlind = (r) => !!(r && r.blind);
   for (let i = 0; i < maxRows; i++) {
     const a = homeRows[i], b = awayRows[i];
     if (!a || !b) continue;
     for (const gk of ['g1','g2','g3']) {
       const av = val(a, gk), bv = val(b, gk);
-      if (av === bv) { homePts += indivDraw; awayPts += indivDraw; }
-      else if (av > bv) homePts += indivWin;
-      else awayPts += indivWin;
+      const [aPts, bPts] = blindAwareOutcome(av, bv, isBlind(a), isBlind(b), indivWin, indivDraw);
+      homePts += aPts;
+      awayPts += bPts;
     }
   }
   return { homePts, awayPts };
