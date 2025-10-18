@@ -1079,6 +1079,50 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   res.json({ ok: true, removed: before - after });
 });
 
+/* ===== Auth (login) ===== */
+// POST is preferred for the app
+app.post('/api/login', (req, res) => {
+  db.read();
+  const { leagueId, pin } = req.body || {};
+  const id = Number(leagueId);
+  const league = (db.data.leagues || []).find(l => l.id === id);
+  if (!league) return res.status(404).json({ error: 'league_not_found' });
+  if (String(pin) !== String(league.pin)) {
+    return res.status(401).json({ error: 'invalid_pin' });
+  }
+  const token = tokenFor(league.id, league.pin);
+  return res.json({
+    ok: true,
+    token,
+    league: {
+      id: league.id,
+      name: league.name,
+      mode: league.mode,
+      gamesPerWeek: league.gamesPerWeek,
+      teamPointsWin: league.teamPointsWin,
+      teamPointsDraw: league.teamPointsDraw,
+      indivPointsWin: league.indivPointsWin,
+      indivPointsDraw: league.indivPointsDraw,
+      handicapBase: league.handicapBase,
+      handicapPercent: league.handicapPercent,
+      hcpLockWeeks: league.hcpLockWeeks,
+      hcpLockFromWeek: league.hcpLockFromWeek,
+      logo: league.logo ?? null,
+    }
+  });
+});
+
+// Optional GET for quick manual testing
+app.get('/api/login', (req, res) => {
+  db.read();
+  const id = Number(req.query.leagueId);
+  const pin = String(req.query.pin || '');
+  const league = (db.data.leagues || []).find(l => l.id === id);
+  if (!league) return res.status(404).json({ error: 'league_not_found' });
+  if (pin !== String(league.pin)) return res.status(401).json({ error: 'invalid_pin' });
+  const token = tokenFor(league.id, league.pin);
+  return res.json({ ok: true, token, league: { id: league.id, name: league.name } });
+});
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
