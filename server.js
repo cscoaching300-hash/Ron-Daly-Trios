@@ -239,7 +239,8 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
     }
   }
 
-  for (const s of stats.values()) s.ave = s.gms ? Math.round((s.pinss / s.gms) * 10) / 10 : 0;
+  // Averages: no decimals, always rounded down
+  for (const s of stats.values()) s.ave = s.gms ? Math.floor(s.pinss / s.gms) : 0;
   return stats;
 }
 
@@ -286,9 +287,10 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   for (const p of allPlayers) {
     const a = agg.get(p.id);
     if (a && a.gms) {
-      p.average = Math.round((a.pins / a.gms) * 10) / 10;
+      p.average = Math.floor(a.pins / a.gms);
     } else {
-      p.average = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
+      const fallback = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
+      p.average = Math.floor(fallback);
     }
     // DO NOT modify p.hcp here (manual-only).
   }
@@ -383,22 +385,22 @@ app.get('/api/players', (req, res) => {
     .sort((a,b)=> a.name.localeCompare(b.name)));
 });
 
-// CREATE PLAYER
+// CREATE PLAYER (floor averages)
 app.post('/api/players', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
   const { name, average = 0, hcp = null, gender = null, teamId = null } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
 
-  const startAve   = +average || 0;
+  const startAve   = Math.floor(+average || 0);
   const initialHcp = Number.isFinite(+hcp) ? +hcp : playerHandicapPerGame(league, startAve, null);
 
   const row = {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,           // live
-    start_average: startAve,     // freeze fallback
+    average: startAve,           // live (floored)
+    start_average: startAve,     // freeze fallback (floored)
     hcp: initialHcp,             // manual baseline (can be edited later)
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
@@ -414,7 +416,7 @@ app.post('/api/players', requireAuth, (req, res) => {
   res.json(row);
 });
 
-// UPDATE PLAYER (manual handicap is only changed if explicitly provided)
+// UPDATE PLAYER (manual handicap unchanged unless explicitly set; floor averages)
 app.put('/api/players/:id', requireAuth, (req, res) => {
   db.read();
   const id = +req.params.id;
@@ -424,15 +426,14 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (!p) return res.status(404).json({ error: 'player not found' });
 
   if (name != null) p.name = String(name);
-  if (average != null) p.average = +average || 0;
-  if (start_average != null) p.start_average = +start_average || 0;
+  if (average != null) p.average = Math.floor(+average || 0);
+  if (start_average != null) p.start_average = Math.floor(+start_average || 0);
 
-  // Manual handicap: update ONLY if the 'hcp' key is present and is a valid number.
+  // Manual handicap: update ONLY if the 'hcp' key is present and valid.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
       p.hcp = Math.max(0, +hcp);
     }
-    // else: ignore clears/NaN → keep existing manual p.hcp
   }
 
   if (gender === 'M' || gender === 'F' || gender === null) p.gender = gender ?? null;
@@ -998,3 +999,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
+
