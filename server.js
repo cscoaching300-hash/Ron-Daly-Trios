@@ -619,41 +619,40 @@ app.post('/api/matches/:id/score', requireAuth, (req, res) => {
   res.json({ id, homePins: m.home_score, awayPins: m.away_score, homePoints: homePts, awayPoints: awayPts });
 });
 
-/* ===== Match Sheet (per-week, two teams, per-bowler games) ===== */
+// --- replace existing hcpForWeek with this version ---
 function hcpForWeek(leagueRaw, weekNumber, player) {
   const league = normalizeLeague(leagueRaw);
-  if (league.mode === 'scratch') return 0;
+  if (!league || league.mode === 'scratch') return 0;
 
-  const start = league.hcpLockFromWeek;
-  const len   = league.hcpLockWeeks;
-  const end   = start + Math.max(0, len) - 1;
-  const withinFreeze = len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
+  const start = +league.hcpLockFromWeek || 0;
+  const len   = +league.hcpLockWeeks || 0;
+  const end   = len > 0 ? start + len - 1 : -1;
+  const wk    = Number.isFinite(+weekNumber) ? +weekNumber : 0;
 
-  const hasManual = player.hcp !== null && player.hcp !== undefined && Number.isFinite(+player.hcp) && +player.hcp >= 0;
+  const hasManual = Number.isFinite(+player.hcp) && +player.hcp >= 0;
   const startAvg  = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
 
-  // During the freeze: manual (if present), else compute from START average
-  if (withinFreeze) {
-    if (hasManual) return +player.hcp;
-    return playerHandicapPerGame(league, startAvg, null);
+  // 1) During FREEZE → always manual-or-start
+  if (len > 0 && wk >= start && wk <= end) {
+    return hasManual ? +player.hcp : playerHandicapPerGame(league, startAvg, null);
   }
 
-  // Unfrozen: compute from the player’s CURRENT average if positive; otherwise fallback
-  const current = Number.isFinite(+player.average) ? +player.average : 0;
-  if (current > 0) {
-    return playerHandicapPerGame(league, current, null);
+  // 2) After FREEZE (or no freeze):
+  //    If we have a real current average, use it. Otherwise fall back to manual/start.
+  const currentAvg = Number.isFinite(+player.average) ? +player.average : 0;
+  if (currentAvg > 0) {
+    return playerHandicapPerGame(league, currentAvg, null);
   }
-
-  // Defensive fallback for post-freeze weeks with no games yet:
-  if (hasManual) return +player.hcp;
-  return playerHandicapPerGame(league, startAvg, null);
+  return hasManual ? +player.hcp : playerHandicapPerGame(league, startAvg, null);
 }
+
 
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-  const weekNumber = req.query.weekNumber != null ? +req.query.weekNumber : 1; // default 1
+const rawWeek = req.query.weekNumber;
+const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0; // robust default
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
 
