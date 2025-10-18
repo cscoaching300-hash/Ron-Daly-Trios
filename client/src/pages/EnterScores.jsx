@@ -36,9 +36,7 @@ function pointsOutcome(a, b, winPts, drawPts) {
   return a > b ? [winPts, 0] : [0, winPts]
 }
 
-/**
- * One side of the sheet (home/away)
- */
+/** One side of the sheet (home/away) */
 function TeamTable({
   title,
   teamOptions,
@@ -220,7 +218,7 @@ function TeamTable({
               <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
               <td style={td}>—</td>
             </tr>
-            {/* NEW: Team points row (per game + series) */}
+            {/* Team points row (per game + series) */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Points</td>
               <td style={td}>—</td>
@@ -260,7 +258,7 @@ export default function EnterScores() {
   // Load teams once
   useEffect(() => { getTeams().then(setTeams) }, [])
 
-  // Sync state with URL params (?week=&homeTeamId=&awayTeamId=)
+  // Sync state with URL params
   useEffect(() => {
     const pWeek = params.get('week')
     const pHome = params.get('homeTeamId') || params.get('teamA')
@@ -270,10 +268,8 @@ export default function EnterScores() {
     if (pHome) setHomeId(pHome)
     if (pAway) setAwayId(pAway)
 
-    // if all present, auto-load
     if (pWeek && pHome && pAway) {
       load(+pWeek, +pHome, +pAway)
-      // try to fetch saved sheet and prefill
       const qs = new URLSearchParams({ weekNumber: pWeek, homeTeamId: pHome, awayTeamId: pAway }).toString()
       fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
         .then(r => (r.ok ? r.json() : null))
@@ -369,7 +365,7 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // singles totals across the table
+  // singles totals
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
@@ -404,7 +400,11 @@ export default function EnterScores() {
       homeTeamId: +homeId,
       awayTeamId: +awayId,
       homeGames: clean(homeVals),
-      awayGames: clean(awayVals)
+      awayGames: clean(awayVals),
+
+      // send EXACT totals shown on the page so standings match:
+      totalPointsHome: totalPoints.home,
+      totalPointsAway: totalPoints.away,
     }
     const res = await saveMatchSheet(payload)
     if (res?.ok) alert('Saved!')
@@ -491,8 +491,6 @@ export default function EnterScores() {
           <div className="muted" style={{fontSize:12}}>
             Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}.
           </div>
-
-          {/* Total points */}
           <div style={{fontSize:20, marginTop:10}}>
             <strong>Total Points:</strong>{' '}
             {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home} — {totalPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
@@ -502,5 +500,3 @@ export default function EnterScores() {
     </div>
   )
 }
-
-
