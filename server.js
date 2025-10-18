@@ -80,18 +80,26 @@ function requireAuth(req, res, next) {
 /* ===== League normalization ===== */
 function normalizeLeague(league) {
   const safe = { ...(league || {}) };
-  const baseNum = +safe.handicapBase;
-  const pctNum  = +safe.handicapPercent;
 
+  // Modes/points
   safe.mode = safe.mode === 'scratch' ? 'scratch' : 'handicap';
-  safe.handicapBase = Number.isFinite(baseNum) && baseNum > 0 ? baseNum : 200;
-  safe.handicapPercent = Number.isFinite(pctNum) && pctNum > 0 ? pctNum : 90;
+
+  // Handicap params
+  const baseNum = Number.isFinite(+safe.handicapBase) ? +safe.handicapBase : 200;
+  const pctNum  = Number.isFinite(+safe.handicapPercent) ? +safe.handicapPercent : 90;
+  safe.handicapBase = baseNum > 0 ? baseNum : 200;
+  safe.handicapPercent = pctNum > 0 ? pctNum : 90;
+
+  // Games per week
   safe.gamesPerWeek = Number.isFinite(+safe.gamesPerWeek) && +safe.gamesPerWeek > 0 ? +safe.gamesPerWeek : 3;
 
-  // IMPORTANT: allow week 0 start; default 0
-  safe.hcpLockFromWeek = Number.isFinite(+safe.hcpLockFromWeek) ? +safe.hcpLockFromWeek : 0;
-  safe.hcpLockWeeks    = Number.isFinite(+safe.hcpLockWeeks) ? +safe.hcpLockWeeks : 0;
+  // Freeze window — supports starting at week 0
+  const lockStart = Number.isFinite(+safe.hcpLockFromWeek) ? +safe.hcpLockFromWeek : 0;
+  const lockLen   = Number.isFinite(+safe.hcpLockWeeks) ? +safe.hcpLockWeeks : 0;
+  safe.hcpLockFromWeek = Math.max(0, lockStart);
+  safe.hcpLockWeeks = Math.max(0, lockLen);
 
+  // Points
   safe.teamPointsWin  = Number.isFinite(+safe.teamPointsWin)  ? +safe.teamPointsWin  : 0;
   safe.teamPointsDraw = Number.isFinite(+safe.teamPointsDraw) ? +safe.teamPointsDraw : 0;
   safe.indivPointsWin = Number.isFinite(+safe.indivPointsWin) ? +safe.indivPointsWin : 0;
@@ -523,8 +531,7 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  // If caller didn't pass a week filter, treat it as "current week 0" for early-season views,
-  // so the freeze from week 0 shows manual hcp on the roster screen pre-Week 1.
+  // If caller didn't pass a week filter, treat it as "current week 0" for early-season views
   const upToWeek = req.query.week != null ? +req.query.week : 0;
 
   const leagueRaw  = (db.data.leagues || []).find(l => l.id === leagueId);
@@ -603,11 +610,23 @@ app.post('/api/matches/:id/score', requireAuth, (req, res) => {
 /* ===== Match Sheet (per-week, two teams, per-bowler games) ===== */
 function hcpForWeek(leagueRaw, weekNumber, player) {
   const league = normalizeLeague(leagueRaw);
-  if (inFreeze(league, weekNumber)) {
-    // During freeze always use manual value; fallback from start average if unset
-    return manualOrStartHcp(league, player);
+  if (league.mode === 'scratch') return 0;
+
+  const start = league.hcpLockFromWeek;
+  const len   = league.hcpLockWeeks;
+  const end   = start + Math.max(0, len) - 1;
+  const withinFreeze = len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
+
+  const stored = player.hcp;
+  const hasStored = stored !== null && stored !== undefined && Number.isFinite(+stored) && +stored >= 0;
+
+  // Freeze: use the manual value if present; otherwise compute from the player's starting/current average
+  if (withinFreeze) {
+    if (hasStored) return +stored;
+    return playerHandicapPerGame(league, player.average, null);
   }
-  // After freeze: derive from current player avg (already maintained by recompute)
+
+  // Unfrozen: compute from the player’s current average by default
   return playerHandicapPerGame(league, player.average, null);
 }
 
@@ -1021,4 +1040,3 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
