@@ -745,10 +745,14 @@ app.get('/api/standings', (req, res) => {
       const played = matches.filter(m => m.home_team_id === t.id || m.away_team_id === t.id);
 
       let pinsS = 0, pinsH = 0, hgs = 0, hgh = 0, hss = 0, hsh = 0, won = 0;
+      let matchesWithSheet = 0; // <- count only matches that have an entered sheet
+
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
 
         if (totals) {
+          matchesWithSheet += 1;
+
           const isHome = m.home_team_id === t.id;
           const sS = isHome ? totals.homeScratch   : totals.awayScratch;
           const sH = isHome ? totals.homeHandicap : totals.awayHandicap;
@@ -761,6 +765,8 @@ app.get('/api/standings', (req, res) => {
           hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
           hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
         } else {
+          // No sheet entered yet. We still use match fallback for pins & highs
+          // (to keep standings useful), but we DO NOT count these toward Gms.
           const { scratch, handicap } = seriesForMatch(league, m, t.id);
           pinsS += scratch;
           pinsH += handicap;
@@ -773,7 +779,9 @@ app.get('/api/standings', (req, res) => {
         won += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
-      const games = played.length * gamesPerWeek;
+      // IMPORTANT: games only from matches that have sheets, to match players' Gms
+      const games = matchesWithSheet * gamesPerWeek;
+
       return { id: t.id, name: t.name, games, won, pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss };
     });
 
