@@ -51,14 +51,14 @@ db.write();
 const uploadsDir = path.join(DATA_DIR, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 app.use('/uploads', express.static(uploadsDir));
-const upload = multer({ dest: uploadsDir });
+const upload = multer({ dest: uploadsDir }); // reserved (logos)
 
 /* ===== Helpers ===== */
 function nextId(collection) {
   const arr = db.data[collection] || [];
   return arr.length ? Math.max(...arr.map(r => r.id || 0)) + 1 : 1;
 }
-const num = (v) => (Number.isFinite(+v) ? +v : 0);
+const num = v => (Number.isFinite(+v) ? +v : 0);
 
 function tokenFor(leagueId, pin) {
   return Buffer.from(`${leagueId}:${pin}`).toString('base64');
@@ -399,9 +399,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,
-    start_average: startAve,
-    hcp: initialHcp,
+    average: startAve,           // live (floored)
+    start_average: startAve,     // freeze fallback (floored)
+    hcp: initialHcp,             // manual baseline (can be edited later)
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -436,7 +436,8 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
     }
   }
 
-  if (gender === 'M' || 'F' || gender === null) p.gender = gender ?? null;
+  // (typo fix) only set when it's M, F, or null
+  if (gender === 'M' || gender === 'F' || gender === null) p.gender = gender ?? null;
 
   if (teamId !== undefined) {
     db.data.team_players = (db.data.team_players || [])
@@ -478,7 +479,8 @@ app.post('/api/teams', requireAuth, (req, res) => {
   const id = nextId('teams');
   db.data.teams.push({ id, league_id: req.league.id, name, created_at: new Date().toISOString() });
   for (const pid of playerIds) db.data.team_players.push({ league_id: req.league.id, team_id: id, player_id: +pid });
-  db.write(); res.json({ id, name });
+  db.write();
+  res.json({ id, name });
 });
 
 /* ===== Players directory (respects freeze for DISPLAY) ===== */
@@ -545,7 +547,7 @@ app.get('/api/match-sheet', (req, res) => {
   db.read();
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-  const rawWeek    = req.query.weekNumber;
+  the rawWeek    = req.query.weekNumber;
   const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0;
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
@@ -1062,4 +1064,3 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
