@@ -488,7 +488,7 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   // manual edit of handicap always respected (esp. for freeze)
   if (hcp === '' || hcp == null) {
     // leave as-is if freeze is active now; otherwise recalc from average
-    if (!inFreeze(league, Number.MAX_SAFE_INTEGER)) { // outside any freeze by default
+    if (!inFreeze(league, Number.MAX_SAFE_INTEGER)) {
       p.hcp = league.mode === 'scratch' ? 0 : playerHandicapPerGame(league, p.average, null);
     }
   } else {
@@ -602,24 +602,7 @@ app.get('/api/matches', (req, res) => {
   res.json(rows);
 });
 
-app.post('/api/matches/:id/score', requireAuth, (req, res) => {
-  db.read();
-  const id = +req.params.id;
-  const { homePins = 0, awayPins = 0 } = req.body || {};
-  const m = (db.data.matches || []).find(x => x.id === id && x.league_id === req.league.id);
-  if (!m) return res.status(404).json({ error: 'match not found' });
-
-  const [homePts, awayPts] = teamPointsFor(req.league, homePins|0, awayPins|0);
-  m.home_score = homePins|0;
-  m.away_score = awayPins|0;
-  m.home_points = homePts;
-  m.away_points = awayPts;
-
-  db.write();
-  res.json({ id, homePins: m.home_score, awayPins: m.away_score, homePoints: homePts, awayPoints: awayPts });
-});
-
-// --- replace existing hcpForWeek with this version ---
+/* --- Robust HCP picker for a given week (freeze-aware + safe fallbacks) --- */
 function hcpForWeek(leagueRaw, weekNumber, player) {
   const league = normalizeLeague(leagueRaw);
   if (!league || league.mode === 'scratch') return 0;
@@ -627,38 +610,44 @@ function hcpForWeek(leagueRaw, weekNumber, player) {
   const start = +league.hcpLockFromWeek || 0;
   const len   = +league.hcpLockWeeks || 0;
   const end   = len > 0 ? start + len - 1 : -1;
-  const wk    = Number.isFinite(+weekNumber) ? +weekNumber : 0;
 
-  const hasManual = Number.isFinite(+player.hcp) && +player.hcp >= 0;
-  const startAvg  = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
+  const wk         = Number.isFinite(+weekNumber) ? +weekNumber : 0;
+  const hasManual  = Number.isFinite(+player.hcp) && +player.hcp >= 0;
 
-  // 1) During FREEZE → always manual-or-start
-  if (len > 0 && wk >= start && wk <= end) {
-    return hasManual ? +player.hcp : playerHandicapPerGame(league, startAvg, null);
-  }
-
-  // 2) After FREEZE (or no freeze):
-  //    If we have a real current average, use it. Otherwise fall back to manual/start.
+  const startAvg   = Number.isFinite(+player.start_average) ? +player.start_average : 0;
   const currentAvg = Number.isFinite(+player.average) ? +player.average : 0;
-  if (currentAvg > 0) {
-    return playerHandicapPerGame(league, currentAvg, null);
+  const effAvg     = currentAvg > 0 ? currentAvg : (startAvg > 0 ? startAvg : 0);
+
+  // During FREEZE → manual if set; else compute from start average (or effAvg fallback)
+  if (len > 0 && wk >= start && wk <= end) {
+    return hasManual
+      ? +player.hcp
+      : playerHandicapPerGame(league, startAvg > 0 ? startAvg : effAvg, null);
   }
-  return hasManual ? +player.hcp : playerHandicapPerGame(league, startAvg, null);
+
+  // After FREEZE (or no freeze): compute from effective average; fall back to manual, then start
+  if (effAvg > 0) return playerHandicapPerGame(league, effAvg, null);
+  if (hasManual)  return +player.hcp;
+  return playerHandicapPerGame(league, startAvg, null);
 }
 
-
+/* ===== Match Sheet (per-week, two teams, per-bowler games) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-const rawWeek = req.query.weekNumber;
-const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0; // robust default
+  const rawWeek    = req.query.weekNumber;
+  const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0; // robust default
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
 
   const leagueRaw = (db.data.leagues || []).find(l => l.id === leagueId);
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
+
+  // Use stats up to the **previous** week so Week N Hcp uses entering average
+  const statsUpTo = Math.max(0, (weekNumber || 0) - 1);
+  const msStats   = computePlayerStatsForLeague(league, statsUpTo);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
   const home    = teams.find(t => t.id === homeTeamId) || null;
@@ -668,13 +657,24 @@ const weekNumber = Number.isFinite(+rawWeek) ? +rawWeek : 0; // robust default
 
   const rosterIdsFor = (teamId) => new Set(tps.filter(tp => tp.team_id === teamId).map(tp => tp.player_id));
 
-  const shape = (p) => ({
-    id: p.id,
-    name: p.name,
-    average: +p.average || 0,
-    gender: p.gender || null,
-    hcp: hcpForWeek(league, weekNumber, p)
-  });
+  // Build row from effective average (stats → raw → start) and compute HCP via hcpForWeek
+  const shape = (p) => {
+    const st = msStats.get(p.id);
+    const statAve  = st && Number.isFinite(+st.ave) ? +st.ave : 0;
+    const startAvg = Number.isFinite(+p.start_average) ? +p.start_average : 0;
+    const rawAvg   = Number.isFinite(+p.average) ? +p.average : 0;
+    const effAvg   = statAve > 0 ? statAve : (rawAvg > 0 ? rawAvg : startAvg);
+
+    const normalizedPlayer = { ...p, average: effAvg };
+
+    return {
+      id: p.id,
+      name: p.name,
+      average: effAvg,
+      gender: p.gender || null,
+      hcp: hcpForWeek(league, weekNumber, normalizedPlayer)
+    };
+  };
 
   const homeRosterIds = home ? rosterIdsFor(home.id) : new Set();
   const awayRosterIds = away ? rosterIdsFor(away.id) : new Set();
@@ -887,7 +887,6 @@ app.get('/api/standings/players', (req, res) => {
     const players = (db.data.players || []).filter(p => p && p.league_id === league.id);
 
     const statsMap = computePlayerStatsForLeague(league, upToWeek);
-
     const displayWeek = (upToWeek != null) ? +upToWeek : 0;
 
     const groups = teams.map(team => {
@@ -1058,3 +1057,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
+
