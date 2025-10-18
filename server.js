@@ -260,26 +260,6 @@ function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
   return manualOrStartHcp(league, player);
 }
 
-// example
-async function loadEnteredWeeks(leagueId: number) {
-  const res = await fetch(`/api/weeks/entered?leagueId=${leagueId}`);
-  const weeks = await res.json(); // [{week_number, date, sheet_count}]
-  return weeks;
-}
-
-// in your component
-useEffect(() => {
-  loadEnteredWeeks(leagueId).then(ws => {
-    setWeekOptions([{ label: 'All weeks', value: '' }, ...ws.map(w => ({
-      label: w.date ? `Week ${w.week_number} — ${w.date}` : `Week ${w.week_number}`,
-      value: String(w.week_number)
-    }))]);
-  });
-}, [leagueId]);
-
-// When user picks a week -> pass ?week=<number> to /api/standings and /api/standings/players
-
-
 /* Recompute players as of a cutoff week (persisted fields) */
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const league = normalizeLeague(leagueRaw);
@@ -585,8 +565,7 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
-  // This is the critical change: compute stats up to the selected week
-  // so the effectiveAvg matches Players-page logic for that week.
+  // Align stats/effectiveAvg with Players page for the chosen week
   const statsForWeek = computePlayerStatsForLeague(league, weekNumber);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
@@ -858,31 +837,27 @@ app.get('/api/standings/players', (req, res) => {
   }
 });
 
-// Add below the other "weeks" routes
+/* ===== Weeks: entered-only helpers ===== */
 
 // Distinct weeks that have at least one saved sheet (i.e., entered weeks)
 app.get('/api/weeks/entered', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  const weeksTbl  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
-  const sheetsTbl = (db.data.sheets || []).filter(s => s.league_id === leagueId);
+  const allWeeks  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
+  const allSheets = (db.data.sheets || []).filter(s => s.league_id === leagueId);
 
-  // unique week_numbers from sheets
-  const uniq = Array.from(new Set(sheetsTbl.map(s => s.week_number))).sort((a,b)=>a-b);
+  const enteredWeekNumbers = Array.from(new Set(allSheets.map(s => s.week_number))).sort((a,b) => a - b);
+  const byWeekNumber = new Map(allWeeks.map(w => [w.week_number, w]));
 
-  const byNum = new Map(weeksTbl.map(w => [w.week_number, w]));
-  const out = uniq.map(wn => ({
+  const result = enteredWeekNumbers.map(wn => ({
     week_number: wn,
-    // include date if you recorded it in weeks; otherwise null
-    date: byNum.get(wn)?.date ?? null,
-    // simple count can be handy for UI
-    sheet_count: sheetsTbl.filter(s => s.week_number === wn).length
+    date: byWeekNumber.get(wn)?.date ?? null,
+    sheet_count: allSheets.filter(s => s.week_number === wn).length,
   }));
 
-  res.json(out);
+  res.json(result);
 });
-
 
 /* ===== Archive / Sheets ===== */
 app.get('/api/weeks', (req, res) => {
@@ -909,7 +884,6 @@ app.get('/api/weeks', (req, res) => {
 
   if (enteredOnly) {
     out = out.filter(w => w.sheet_count > 0);
-    // If you didn’t pre-create weeks rows, also include week_numbers that exist only in sheets:
     const known = new Set(out.map(w => w.week_number));
     for (const [wn, cnt] of countByWeek.entries()) {
       if (!known.has(wn)) out.push({ id: null, week_number: wn, date: null, sheet_count: cnt });
@@ -919,7 +893,6 @@ app.get('/api/weeks', (req, res) => {
 
   res.json(out);
 });
-
 
 app.get('/api/sheets', (req, res) => {
   db.read();
@@ -1025,4 +998,3 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
