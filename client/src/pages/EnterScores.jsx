@@ -9,6 +9,34 @@ const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
+/* Blind-aware singles outcome.
+   Rules:
+   - A blind bowler never earns points.
+   - If blind's value >= opponent's, opponent gets 0 (no draw).
+   - If opponent's value > blind's, opponent gets win points.
+   - If neither is blind: normal win/draw.
+*/
+function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
+  // both blind => no one gets points
+  if (aBlind && bBlind) return [0, 0]
+
+  // A is blind: A never scores; B only scores if strictly greater
+  if (aBlind && !bBlind) {
+    if (bVal > aVal) return [0, winPts]
+    return [0, 0]
+  }
+
+  // B is blind: B never scores; A only scores if strictly greater
+  if (!aBlind && bBlind) {
+    if (aVal > bVal) return [winPts, 0]
+    return [0, 0]
+  }
+
+  // No blinds: normal outcome
+  if (aVal === bVal) return [drawPts, drawPts]
+  return aVal > bVal ? [winPts, 0] : [0, winPts]
+}
+
 function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)}>
@@ -31,17 +59,14 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
   )
 }
 
-function pointsOutcome(a, b, winPts, drawPts) {
-  if (a === b) return [drawPts, drawPts]
-  return a > b ? [winPts, 0] : [0, winPts]
-}
-
-/** One side of the sheet (home/away) */
+/**
+ * One side of the sheet (home/away)
+ */
 function TeamTable({
   title,
   teamOptions,
   subOptions,
-  values,           // [{playerId, g1,g2,g3, hcp}]
+  values,           // [{playerId, g1,g2,g3, hcp, blind?}]
   setValues,
   gamesPerWeek,
   opponentRowsProcessed,
@@ -56,9 +81,9 @@ function TeamTable({
   useEffect(() => {
     if (!values.length) {
       setValues([
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0 },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0 },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0 }
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blind: false },
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blind: false },
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blind: false }
       ])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,14 +112,14 @@ function TeamTable({
     }
   })
 
-  // singles points per bowler vs opposite index on opponent
+  // singles points per bowler vs opposite index on opponent (blind-aware)
   const singlesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
-    const [g1hA] = pointsOutcome(r.g1h, opp.g1h, indivWin, indivDraw)
-    const [g2hA] = pointsOutcome(r.g2h, opp.g2h, indivWin, indivDraw)
-    const [g3hA] = pointsOutcome(r.g3h, opp.g3h, indivWin, indivDraw)
-    return g1hA + g2hA + g3hA
+    const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blind, !!opp.blind, indivWin, indivDraw)
+    const [g2A] = blindAwareOutcome(r.g2h, opp.g2h, !!r.blind, !!opp.blind, indivWin, indivDraw)
+    const [g3A] = blindAwareOutcome(r.g3h, opp.g3h, !!r.blind, !!opp.blind, indivWin, indivDraw)
+    return g1A + g2A + g3A
   })
 
   const totals = rows.reduce((a, r) => ({
@@ -122,29 +147,30 @@ function TeamTable({
   const g2Them = useHandicap ? oppHcpTotals.g2h : oppScratchTotals.g2
   const g3Them = useHandicap ? oppHcpTotals.g3h : oppScratchTotals.g3
 
-  const [g1Pts] = pointsOutcome(g1Us, g1Them, teamWin, teamDraw)
-  const [g2Pts] = pointsOutcome(g2Us, g2Them, teamWin, teamDraw)
-  const [g3Pts] = pointsOutcome(g3Us, g3Them, teamWin, teamDraw)
+  const [g1Pts] = blindAwareOutcome(g1Us, g1Them, false, false, teamWin, teamDraw) // team outcomes ignore blind; already baked into totals
+  const [g2Pts] = blindAwareOutcome(g2Us, g2Them, false, false, teamWin, teamDraw)
+  const [g3Pts] = blindAwareOutcome(g3Us, g3Them, false, false, teamWin, teamDraw)
 
   const seriesUs   = useHandicap ? totals.seriesH : totals.series
   const seriesThem = useHandicap
     ? (oppHcpTotals.g1h + oppHcpTotals.g2h + oppHcpTotals.g3h)
     : (oppScratchTotals.g1 + oppScratchTotals.g2 + oppScratchTotals.g3)
 
-  const [seriesPts] = pointsOutcome(seriesUs, seriesThem, teamWin, teamDraw)
+  const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
-  const addRow = () => setValues(v => [...v, { playerId:'', g1:'', g2:'', g3:'', hcp:0 }])
+  const addRow = () => setValues(v => [...v, { playerId:'', g1:'', g2:'', g3:'', hcp:0, blind:false }])
   const removeRow = (idx) => setValues(v => v.filter((_,i)=>i!==idx))
 
   return (
-    <section className="card" style={{flex: 1, minWidth: 560}}>
+    <section className="card" style={{flex: 1, minWidth: 640}}>
       <h3 style={{marginTop:0, textAlign:'center'}}>{title}</h3>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%', borderCollapse:'collapse'}}>
           <thead>
             <tr>
               <th style={th}>Player</th>
+              <th style={th}>Blind</th>
               <th style={th}>Hcp</th>
               <th style={th}>G1</th>
               <th style={th}>G2</th>
@@ -167,10 +193,25 @@ function TeamTable({
                       setValues(list => list.map((x,i)=>{
                         if (i !== idx) return x
                         const picked = byId.get(String(id))
+                        // If blind is already toggled, keep it and re-apply blind logic with new player
+                        const baseHcp = picked ? (num(picked.hcp) || 0) : 0
+                        const baseAvg = picked ? (num(picked.average) || 0) : 0
+                        if (x.blind) {
+                          const blindH = Math.floor(baseHcp * 0.9)
+                          const blindG = Math.floor(baseAvg * 0.9)
+                          return {
+                            ...x,
+                            playerId: id,
+                            hcp: blindH,
+                            g1: String(blindG),
+                            g2: String(blindG),
+                            g3: String(blindG),
+                          }
+                        }
                         return {
                           ...x,
                           playerId: id,
-                          hcp: picked ? (num(picked.hcp) || 0) : 0
+                          hcp: baseHcp
                         }
                       }))
                     }}
@@ -179,7 +220,44 @@ function TeamTable({
                     disabledIds={new Set([...usedIds].filter(id => String(id)!==String(r.playerId)))}
                   />
                 </td>
+
+                {/* Blind toggle */}
+                <td style={td}>
+                  <label style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                    <input
+                      type="checkbox"
+                      checked={!!r.blind}
+                      onChange={e=>{
+                        const checked = e.target.checked
+                        setValues(list => list.map((x,i)=>{
+                          if (i !== idx) return x
+                          const picked = byId.get(String(x.playerId))
+                          const baseHcp = picked ? (num(picked.hcp) || 0) : num(x.hcp)
+                          const baseAvg = picked ? (num(picked.average) || 0) : 0
+                          if (checked) {
+                            const blindH = Math.floor(baseHcp * 0.9)
+                            const blindG = Math.floor(baseAvg * 0.9)
+                            return {
+                              ...x,
+                              blind: true,
+                              hcp: blindH,
+                              g1: String(blindG),
+                              g2: String(blindG),
+                              g3: String(blindG),
+                            }
+                          } else {
+                            // Revert HCP to the player's normal value if known; keep entered scores as-is
+                            const normH = picked ? (num(picked.hcp) || 0) : num(x.hcp)
+                            return { ...x, blind:false, hcp: normH }
+                          }
+                        }))
+                      }}
+                    />
+                  </label>
+                </td>
+
                 <td style={td}>{r.hcp}</td>
+
                 {['g1','g2','g3'].map(k=>(
                   <td key={k} style={td}>
                     <input
@@ -191,6 +269,7 @@ function TeamTable({
                         const v = e.target.value.replace(/\D/g,'')
                         setValues(list => list.map((x,i)=> i===idx ? {...x,[k]:v} : x))
                       }}
+                      disabled={!!r.blind} // blind rows auto-filled & locked
                     />
                   </td>
                 ))}
@@ -204,9 +283,11 @@ function TeamTable({
                 </td>
               </tr>
             ))}
+
             {/* Totals row */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
+              <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>{totals.g1}</td>
               <td style={td}>{totals.g2}</td>
@@ -218,9 +299,11 @@ function TeamTable({
               <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
               <td style={td}>—</td>
             </tr>
+
             {/* Team points row (per game + series) */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Points</td>
+              <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>{g1Pts}</td>
               <td style={td}>{g2Pts}</td>
@@ -258,7 +341,7 @@ export default function EnterScores() {
   // Load teams once
   useEffect(() => { getTeams().then(setTeams) }, [])
 
-  // Sync state with URL params
+  // Sync state with URL params (?week=&homeTeamId=&awayTeamId=)
   useEffect(() => {
     const pWeek = params.get('week')
     const pHome = params.get('homeTeamId') || params.get('teamA')
@@ -268,8 +351,10 @@ export default function EnterScores() {
     if (pHome) setHomeId(pHome)
     if (pAway) setAwayId(pAway)
 
+    // if all present, auto-load
     if (pWeek && pHome && pAway) {
       load(+pWeek, +pHome, +pAway)
+      // try to fetch saved sheet and prefill
       const qs = new URLSearchParams({ weekNumber: pWeek, homeTeamId: pHome, awayTeamId: pAway }).toString()
       fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
         .then(r => (r.ok ? r.json() : null))
@@ -280,7 +365,8 @@ export default function EnterScores() {
             g1: String(r.g1 || ''),
             g2: String(r.g2 || ''),
             g3: String(r.g3 || ''),
-            hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0
+            hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
+            blind: !!r.blind // future-proof; will be undefined for older saves
           })
           setHomeVals((s.homeGames || []).map(shape))
           setAwayVals((s.awayGames || []).map(shape))
@@ -296,16 +382,16 @@ export default function EnterScores() {
     setSheet(data)
     if (!homeVals.length) {
       setHomeVals([
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
       ])
     }
     if (!awayVals.length) {
       setAwayVals([
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
+        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
       ])
     }
   }
@@ -345,7 +431,7 @@ export default function EnterScores() {
 
   const useG = (totals, which) => useHandicap ? totals.hcp[which] : totals.scratch[which]
   const perGame = ['g1','g2','g3'].reduce((acc, gk) => {
-    const [hPts, aPts] = pointsOutcome(useG(homeT, gk), useG(awayT, gk), teamWin, teamDraw)
+    const [hPts, aPts] = blindAwareOutcome(useG(homeT, gk), useG(awayT, gk), false, false, teamWin, teamDraw)
     acc.home += hPts; acc.away += aPts; return acc
   }, { home:0, away:0 })
 
@@ -354,10 +440,10 @@ export default function EnterScores() {
   const homeSeriesH = useG(homeT, 'g1') + useG(homeT, 'g2') + useG(homeT, 'g3')
   const awaySeriesH = useG(awayT, 'g1') + useG(awayT, 'g2') + useG(awayT, 'g3')
 
-  const [seriesHomePts, seriesAwayPts] = pointsOutcome(
+  const [seriesHomePts, seriesAwayPts] = blindAwareOutcome(
     useHandicap ? homeSeriesH : homeSeries,
     useHandicap ? awaySeriesH : awaySeries,
-    teamWin, teamDraw
+    false, false, teamWin, teamDraw
   )
 
   const teamPoints = {
@@ -365,16 +451,16 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // singles totals
+  // singles totals across the table (blind-aware)
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
     for (let i=0; i<maxRows; i++) {
       const a = homeProcessed[i], b = awayProcessed[i]
       if (!a || !b) continue
-      const [a1, b1] = pointsOutcome(a.g1h, b.g1h, indivWin, indivDraw)
-      const [a2, b2] = pointsOutcome(a.g2h, b.g2h, indivWin, indivDraw)
-      const [a3, b3] = pointsOutcome(a.g3h, b.g3h, indivWin, indivDraw)
+      const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blind, !!b.blind, indivWin, indivDraw)
+      const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blind, !!b.blind, indivWin, indivDraw)
+      const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blind, !!b.blind, indivWin, indivDraw)
       homePts += a1 + a2 + a3
       awayPts += b1 + b2 + b3
     }
@@ -393,7 +479,8 @@ export default function EnterScores() {
       .filter(r => r.playerId)
       .map(r => ({
         playerId: +r.playerId,
-        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp)
+        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp),
+        blind: !!r.blind
       }))
     const payload = {
       weekNumber: +weekNumber,
@@ -401,10 +488,9 @@ export default function EnterScores() {
       awayTeamId: +awayId,
       homeGames: clean(homeVals),
       awayGames: clean(awayVals),
-
-      // send EXACT totals shown on the page so standings match:
+      // Send the exact totals shown so standings match exactly
       totalPointsHome: totalPoints.home,
-      totalPointsAway: totalPoints.away,
+      totalPointsAway: totalPoints.away
     }
     const res = await saveMatchSheet(payload)
     if (res?.ok) alert('Saved!')
@@ -475,7 +561,7 @@ export default function EnterScores() {
         <div style={{marginTop:8, display:'grid', gap:6}}>
           <div style={{fontSize:18}}>
             <strong>Team Series (scratch):</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {homeSeries} — {awaySeries} {(sheet?.awayTeam?.name || 'Team B')}
+            {(sheet?.homeTeam?.name || 'Team A')} {homeVals.reduce((s,r)=> s + num(r.g1)+num(r.g2)+num(r.g3), 0)} — {awayVals.reduce((s,r)=> s + num(r.g1)+num(r.g2)+num(r.g3), 0)} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div style={{fontSize:18}}>
             <strong>Team Points (games + series):</strong>{' '}
@@ -489,8 +575,10 @@ export default function EnterScores() {
             {(sheet?.homeTeam?.name || 'Team A')} {singlesTotals.homePts} — {singlesTotals.awayPts} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:12}}>
-            Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}.
+            Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}. Blinds never score, but can block their opponent.
           </div>
+
+          {/* Total points */}
           <div style={{fontSize:20, marginTop:10}}>
             <strong>Total Points:</strong>{' '}
             {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home} — {totalPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
