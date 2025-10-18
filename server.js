@@ -735,42 +735,31 @@ app.get('/api/standings', (req, res) => {
       const played = matches.filter(m => m.home_team_id === t.id || m.away_team_id === t.id);
 
       let pinsS = 0, pinsH = 0, hgs = 0, hgh = 0, hss = 0, hsh = 0, won = 0;
-      let matchesWithSheet = 0; // count only matches that have an entered sheet
+      let matchesWithSheet = 0;
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
+        if (!totals) continue;                // ← skip matches without a sheet
 
-        if (totals) {
-          matchesWithSheet += 1;
+        matchesWithSheet += 1;
 
-          const isHome = m.home_team_id === t.id;
-          const sS = isHome ? totals.homeScratch   : totals.awayScratch;
-          const sH = isHome ? totals.homeHandicap : totals.awayHandicap;
+        const isHome = m.home_team_id === t.id;
+        const sS = isHome ? totals.homeScratch   : totals.awayScratch;
+        const sH = isHome ? totals.homeHandicap : totals.awayHandicap;
 
-          pinsS += sS;
-          pinsH += (league.mode === 'scratch' ? sS : sH);
+        pinsS += sS;
+        pinsH += (league.mode === 'scratch' ? sS : sH);
 
-          hgs = Math.max(hgs, isHome ? totals.homeHgs : totals.awayHgs);
-          hgh = Math.max(hgh, isHome ? totals.homeHgh : totals.awayHgh);
-          hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
-          hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
-        } else {
-          // No sheet yet: still contribute series/hi approximations for readability, but do not count games
-          const { scratch, handicap } = seriesForMatch(league, m, t.id);
-          pinsS += scratch;
-          pinsH += handicap;
-          hgs = Math.max(hgs, approxHighGameFromSeries(scratch, gamesPerWeek));
-          hgh = Math.max(hgh, approxHighGameFromSeries(handicap, gamesPerWeek));
-          hss = Math.max(hss, scratch);
-          hsh = Math.max(hsh, handicap);
-        }
+        hgs = Math.max(hgs, isHome ? totals.homeHgs : totals.awayHgs);
+        hgh = Math.max(hgh, isHome ? totals.homeHgh : totals.awayHgh);
+        hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
+        hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
 
+        // Points only count when there is a sheet (and thus a legit result)
         won += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
-      // games only from matches that have sheets, to match players' Gms
       const games = matchesWithSheet * gamesPerWeek;
-
       return { id: t.id, name: t.name, games, won, pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss };
     });
 
@@ -782,6 +771,7 @@ app.get('/api/standings', (req, res) => {
     res.status(500).json({ error: 'standings_failed', message: String(err?.message || err) });
   }
 });
+
 
 /* ===== Individual standings (by team) ===== */
 app.get('/api/standings/players', (req, res) => {
@@ -977,17 +967,32 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'sheet not found' });
   }
 
+  // Reset the corresponding match (keep schedule, clear result)
+  const week = (db.data.weeks || []).find(w => w.league_id === league.id && w.week_number === weekNumber);
+  if (week) {
+    const match = (db.data.matches || []).find(m =>
+      m.league_id === league.id && m.week_id === week.id &&
+      m.home_team_id === homeTeamId && m.away_team_id === awayTeamId
+    );
+    if (match) {
+      match.home_score = 0;
+      match.away_score = 0;
+      match.home_points = 0;
+      match.away_points = 0;
+    }
+  }
+
+  // Recompute averages ONLY; manual hcp is never changed here
   const remainingWeeks = (db.data.sheets || [])
     .filter(s => s.league_id === league.id)
     .map(s => s.week_number);
   const lastWeek = remainingWeeks.length ? Math.max(...remainingWeeks) : 0;
-
-  // recompute averages ONLY; manual hcp is never changed here
   recomputePlayersUpToWeek(league, lastWeek);
 
   db.write();
   res.json({ ok: true, removed: before - after });
 });
+
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
