@@ -123,7 +123,7 @@ function inFreeze(league, weekNumber) {
 
 /* ===== Handicap/Stats utils ===== */
 function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
-  if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp;
+  if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp; // explicit override
   const league = normalizeLeague(leagueRaw);
   if (!league || league.mode === 'scratch') return 0;
   const base = league.handicapBase;
@@ -239,6 +239,7 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
     }
   }
 
+  // Averages: no decimals, always rounded down
   for (const s of stats.values()) s.ave = s.gms ? Math.floor(s.pinss / s.gms) : 0;
   return stats;
 }
@@ -267,7 +268,7 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const sheets = (db.data.sheets || [])
     .filter(s => s.league_id === league.id && s.week_number <= upToWeek);
 
-  const agg = new Map();
+  const agg = new Map(); // pid -> { gms, pins }
   const bump = (row) => {
     if (!row?.playerId) return;
     const pid = +row.playerId;
@@ -291,6 +292,7 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
       const fallback = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
       p.average = Math.floor(fallback);
     }
+    // DO NOT modify p.hcp here (manual-only).
   }
 }
 
@@ -397,9 +399,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,
-    start_average: startAve,
-    hcp: initialHcp,
+    average: startAve,           // live (floored)
+    start_average: startAve,     // freeze fallback (floored)
+    hcp: initialHcp,             // manual baseline (can be edited later)
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -427,6 +429,7 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (average != null) p.average = Math.floor(+average || 0);
   if (start_average != null) p.start_average = Math.floor(+start_average || 0);
 
+  // Manual handicap: update ONLY if the 'hcp' key is present and valid.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
       p.hcp = Math.max(0, +hcp);
@@ -483,6 +486,7 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
+  // displayWeek decides freeze; statsUpTo controls aggregation (null = all weeks)
   const displayWeek = req.query.week != null ? +req.query.week : 0;
   const statsUpTo   = req.query.week != null ? +req.query.week : null;
 
@@ -550,6 +554,7 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
+  // Align stats/effectiveAvg with Players page for the chosen week
   const statsForWeek = computePlayerStatsForLeague(league, weekNumber);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
@@ -562,16 +567,16 @@ app.get('/api/match-sheet', (req, res) => {
 
   const shape = (p) => {
     const st = statsForWeek.get(p.id);
-    const statAve  = st && Number.isFinite(+st.ave) ? +st.ave : 0;
+    theAve  = st && Number.isFinite(+st.ave) ? +st.ave : 0;
     const fallback = Number.isFinite(+p.average) ? +p.average : (Number.isFinite(+p.start_average) ? +p.start_average : 0);
-    const effAvg   = statAve > 0 ? statAve : fallback;
+    const effAvg   = theAve > 0 ? theAve : fallback;
 
     return {
       id: p.id,
       name: p.name,
       average: effAvg,
       gender: p.gender || null,
-      hcp: hcpDisplayForList(league, weekNumber, p, effAvg)
+      hcp: hcpDisplayForList(league, weekNumber, p, effAvg) // <- identical to Players page
     };
   };
 
@@ -612,6 +617,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   if (!weekNumber || !homeTeamId || !awayTeamId)
     return res.status(400).json({ error: 'weekNumber, homeTeamId, awayTeamId required' });
 
+  // ensure week
   let week = (db.data.weeks || []).find(w => w.league_id === league.id && w.week_number === +weekNumber);
   if (!week) {
     const weekId = nextId('weeks');
@@ -619,6 +625,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.weeks.push(week);
   }
 
+  // ensure match
   let match = (db.data.matches || []).find(m =>
     m.league_id === league.id && m.week_id === week.id &&
     m.home_team_id === +homeTeamId && m.away_team_id === +awayTeamId
@@ -631,45 +638,50 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-  const sumSeriesScratch = (rows=[]) =>
-    rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
+// Scratch series (stored like before)
+const sumSeriesScratch = (rows=[]) =>
+  rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
 
-  const homeSeriesScratch = sumSeriesScratch(homeGames || []);
-  const awaySeriesScratch = sumSeriesScratch(awayGames || []);
-  match.home_score = homeSeriesScratch;
-  match.away_score = awaySeriesScratch;
+const homeSeriesScratch = sumSeriesScratch(homeGames || []);
+const awaySeriesScratch = sumSeriesScratch(awayGames || []);
+match.home_score = homeSeriesScratch;
+match.away_score = awaySeriesScratch;
 
-  const W = num(league.teamPointsWin);
-  const D = num(league.teamPointsDraw);
-  const useHandicap = league.mode === 'handicap';
+// --- Team points per game + series, using HCP in handicap mode ---
+const W = num(league.teamPointsWin);
+const D = num(league.teamPointsDraw);
+const useHandicap = league.mode === 'handicap';
 
-  const gameTotal = (rows, gKey) =>
-    (rows || []).reduce(
-      (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
-      0
-    );
+const gameTotal = (rows, gKey) =>
+  (rows || []).reduce(
+    (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
+    0
+  );
 
-  let homePts = 0, awayPts = 0;
-  for (const gKey of ['g1','g2','g3']) {
-    const h = gameTotal(homeGames, gKey);
-    const a = gameTotal(awayGames, gKey);
-    if (h > a) homePts += W;
-    else if (a > h) awayPts += W;
-    else { homePts += D; awayPts += D; }
-  }
-
-  const seriesTotal = (rows) =>
-    ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
-
-  const hs = seriesTotal(homeGames);
-  const as = seriesTotal(awayGames);
-  if (hs > as) homePts += W;
-  else if (as > hs) awayPts += W;
+let homePts = 0, awayPts = 0;
+for (const gKey of ['g1','g2','g3']) {
+  const h = gameTotal(homeGames, gKey);
+  const a = gameTotal(awayGames, gKey);
+  if (h > a) homePts += W;
+  else if (a > h) awayPts += W;
   else { homePts += D; awayPts += D; }
+}
 
-  match.home_points = homePts;
-  match.away_points = awayPts;
+// Series (scratch or handicap depending on mode)
+const seriesTotal = (rows) =>
+  ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
 
+const hs = seriesTotal(homeGames);
+const as = seriesTotal(awayGames);
+if (hs > as) homePts += W;
+else if (as > hs) awayPts += W;
+else { homePts += D; awayPts += D; }
+
+match.home_points = homePts;
+match.away_points = awayPts;
+
+
+  // overwrite sheet for same league/week/teams
   db.data.sheets = (db.data.sheets || []).filter(s =>
     !(s.league_id===league.id && s.week_number===+weekNumber && s.homeTeamId===+homeTeamId && s.awayTeamId===+awayTeamId)
   );
@@ -683,6 +695,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     saved_at: new Date().toISOString()
   });
 
+  // recompute averages ONLY; manual hcp is never changed here
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
@@ -750,7 +763,7 @@ app.get('/api/standings', (req, res) => {
         return w ? w.week_number <= upToWeek : true;
       });
 
-    // NEW: compute per-player (singles) points up to week and map roster by team
+    // per-player singles points up to cutoff
     const statsMap = computePlayerStatsForLeague(league, upToWeek);
     const tps = (db.data.team_players || []).filter(tp => tp && tp.league_id === league.id);
 
@@ -762,7 +775,7 @@ app.get('/api/standings', (req, res) => {
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
-        if (!totals) continue;
+        if (!totals) continue;                // skip matches without a sheet
 
         matchesWithSheet += 1;
 
@@ -778,24 +791,25 @@ app.get('/api/standings', (req, res) => {
         hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
         hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
 
+        // Points only count when there is a sheet (and thus a legit result)
         teamPts += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
-      // Singles (individual) points: sum of roster players' pts up to week
+      // Singles (individual) points for this team
       const rosterIds = new Set(tps.filter(tp => tp.team_id === t.id).map(tp => tp.player_id));
       let indivPts = 0;
       for (const pid of rosterIds) indivPts += (statsMap.get(pid)?.pts || 0);
 
       const games = matchesWithSheet * gamesPerWeek;
 
-      return {
-        id: t.id,
-        name: t.name,
-        games,
-        won: teamPts,           // team points (unchanged)
-        indiv_points: indivPts, // NEW: singles/individual points
-        pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss
-      };
+      // TOTAL points = team + individual (this becomes 'Pts' in the UI)
+      const totalPts = teamPts + indivPts;
+
+      return { id: t.id, name: t.name, games,
+               won: totalPts,                // <= TOTAL points
+               team_points: teamPts,         // component 1
+               indiv_points: indivPts,       // component 2
+               pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss };
     });
 
     rows.sort((a,b)=> b.won - a.won || b.pinsh - a.pinsh || a.name.localeCompare(b.name));
@@ -806,6 +820,7 @@ app.get('/api/standings', (req, res) => {
     res.status(500).json({ error: 'standings_failed', message: String(err?.message || err) });
   }
 });
+
 
 /* ===== Individual standings (by team) ===== */
 app.get('/api/standings/players', (req, res) => {
@@ -859,6 +874,8 @@ app.get('/api/standings/players', (req, res) => {
 });
 
 /* ===== Weeks: entered-only helpers ===== */
+
+// Distinct weeks that have at least one saved sheet (i.e., entered weeks)
 app.get('/api/weeks/entered', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -866,7 +883,10 @@ app.get('/api/weeks/entered', (req, res) => {
   const allWeeks  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
   const allSheets = (db.data.sheets || []).filter(s => s.league_id === leagueId);
 
+  // Unique week_numbers present in sheets
   const enteredWeekNumbers = Array.from(new Set(allSheets.map(s => s.week_number))).sort((a,b) => a - b);
+
+  // Map weeks by week_number to fetch dates (if weeks were created with dates)
   const byWeekNumber = new Map(allWeeks.map(w => [w.week_number, w]));
 
   const result = enteredWeekNumbers.map(wn => ({
@@ -996,6 +1016,7 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     return res.status(404).json({ error: 'sheet not found' });
   }
 
+  // Reset the corresponding match (keep schedule, clear result)
   const week = (db.data.weeks || []).find(w => w.league_id === league.id && w.week_number === weekNumber);
   if (week) {
     const match = (db.data.matches || []).find(m =>
@@ -1010,6 +1031,7 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
     }
   }
 
+  // Recompute averages ONLY; manual hcp is never changed here
   const remainingWeeks = (db.data.sheets || [])
     .filter(s => s.league_id === league.id)
     .map(s => s.week_number);
@@ -1019,6 +1041,7 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   db.write();
   res.json({ ok: true, removed: before - after });
 });
+
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
