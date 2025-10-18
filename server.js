@@ -39,12 +39,10 @@ for (const k of Object.keys(defaultData)) {
   if (!Array.isArray(db.data[k])) db.data[k] = [];
 }
 
-/* ---- one-time migration: ensure start_average on all players ---- */
+/* ---- migration: ensure start_average on all players ---- */
 db.data.players = (db.data.players || []).map(p => {
-  const startAve = Number.isFinite(+p.start_average)
-    ? +p.start_average
-    : (Number.isFinite(+p.average) ? +p.average : 0);
-  return { ...p, start_average: startAve };
+  const hasStart = Number.isFinite(+p.start_average);
+  return hasStart ? p : { ...p, start_average: Number.isFinite(+p.average) ? +p.average : 0 };
 });
 db.write();
 
@@ -90,7 +88,8 @@ function normalizeLeague(league) {
   safe.handicapPercent = Number.isFinite(pctNum) && pctNum > 0 ? pctNum : 90;
   safe.gamesPerWeek = Number.isFinite(+safe.gamesPerWeek) && +safe.gamesPerWeek > 0 ? +safe.gamesPerWeek : 3;
 
-  safe.hcpLockFromWeek = Number.isFinite(+safe.hcpLockFromWeek) ? +safe.hcpLockFromWeek : 1;
+  // IMPORTANT: allow week 0 start; default 0
+  safe.hcpLockFromWeek = Number.isFinite(+safe.hcpLockFromWeek) ? +safe.hcpLockFromWeek : 0;
   safe.hcpLockWeeks    = Number.isFinite(+safe.hcpLockWeeks) ? +safe.hcpLockWeeks : 0;
 
   safe.teamPointsWin  = Number.isFinite(+safe.teamPointsWin)  ? +safe.teamPointsWin  : 0;
@@ -101,6 +100,18 @@ function normalizeLeague(league) {
   return safe;
 }
 
+/* ===== Freeze helpers ===== */
+function freezeWindow(league) {
+  const start = +league.hcpLockFromWeek || 0;       // allow 0
+  const len   = +league.hcpLockWeeks || 0;          // 0 = no freeze
+  const end   = len > 0 ? start + len - 1 : -1;     // inclusive end; -1 means disabled
+  return { start, len, end };
+}
+function inFreeze(league, weekNumber) {
+  const { len, start, end } = freezeWindow(league);
+  return len > 0 && weekNumber >= start && weekNumber <= end;
+}
+
 /* ===== Handicap/Stats utils ===== */
 function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
   if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp; // explicit override
@@ -109,6 +120,13 @@ function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
   const base = league.handicapBase;
   const pct  = league.handicapPercent / 100;
   return Math.max(0, Math.round((base - (+avg || 0)) * pct));
+}
+
+// Manual or fallback from start average (used during FREEZE)
+function manualOrStartHcp(league, player) {
+  if (Number.isFinite(+player.hcp) && +player.hcp >= 0) return +player.hcp;
+  const startAve = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
+  return playerHandicapPerGame(league, startAve, null);
 }
 
 function teamHandicapPerGame(leagueRaw, teamId) {
@@ -223,7 +241,7 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   return stats;
 }
 
-/* Display handicap (read-only) — ALWAYS derived from effective avg */
+/* Display HCP after freeze (calculated from effective average) */
 function hcpDisplayFromEffectiveAverage(league, effectiveAvg) {
   if (!league || league.mode === 'scratch') return 0;
   const base = +league.handicapBase || 200;
@@ -231,7 +249,7 @@ function hcpDisplayFromEffectiveAverage(league, effectiveAvg) {
   return Math.max(0, Math.round((base - (+effectiveAvg || 0)) * pct));
 }
 
-/* Recompute players as of a cutoff week (or 0 = before season) */
+/* Recompute players as of a cutoff week */
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const league = normalizeLeague(leagueRaw);
   const sheets = (db.data.sheets || [])
@@ -251,32 +269,33 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
     (s.awayGames || []).forEach(bump);
   }
 
-  const start = league.hcpLockFromWeek;
-  const len   = league.hcpLockWeeks;
-  const end   = start + Math.max(0, len) - 1;
-  const inFreeze = len > 0 && upToWeek >= start && upToWeek <= end;
-  const pastFreeze = len === 0 ? true : upToWeek > end;
-
   const allPlayers = (db.data.players || []).filter(p => p.league_id === league.id);
+
+  const { start, len, end } = freezeWindow(league);
+  const isFreeze = len > 0 && upToWeek >= start && upToWeek <= end;
+  const afterFreeze = len === 0 ? true : upToWeek > end;
 
   for (const p of allPlayers) {
     const a = agg.get(p.id);
 
-    // Average: computed if any games; otherwise revert to starting average
+    // average: sheet-based if any, else revert to start_average
     if (a && a.gms) {
       p.average = Math.round((a.pins / a.gms) * 10) / 10;
     } else {
       p.average = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
     }
 
-    // Handicap: honor freeze window for STORED hcp
-    if (inFreeze) {
+    // handicap writes:
+    if (isFreeze) {
+      // keep admin/manual handicap during freeze; if missing, set once from start_average
       if (!Number.isFinite(+p.hcp) || +p.hcp < 0) {
-        p.hcp = playerHandicapPerGame(league, p.average, null);
+        p.hcp = manualOrStartHcp(league, p);
       }
-    } else if (pastFreeze || len === 0) {
+    } else if (afterFreeze) {
+      // auto after freeze
       p.hcp = playerHandicapPerGame(league, p.average, null);
     } else {
+      // no freeze configured
       p.hcp = playerHandicapPerGame(league, p.average, null);
     }
   }
@@ -303,7 +322,7 @@ app.post('/api/leagues', (req, res) => {
     gamesPerWeek = 3,
     mode = 'handicap',
     hcpLockWeeks = 0,
-    hcpLockFromWeek = 1,
+    hcpLockFromWeek = 0, // default 0
     pin
   } = req.body || {};
 
@@ -325,7 +344,7 @@ app.post('/api/leagues', (req, res) => {
     gamesPerWeek: +gamesPerWeek || 3,
     mode: mode === 'scratch' ? 'scratch' : 'handicap',
     hcpLockWeeks: +hcpLockWeeks || 0,
-    hcpLockFromWeek: +hcpLockFromWeek || 1,
+    hcpLockFromWeek: +hcpLockFromWeek || 0,
     pin: String(pin),
     logo: null,
     created_at: new Date().toISOString()
@@ -357,7 +376,7 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
   if (up.indivPointsDraw !== undefined) league.indivPointsDraw = +up.indivPointsDraw || 0;
 
   if (up.hcpLockWeeks !== undefined) league.hcpLockWeeks = numOr(up.hcpLockWeeks, 0);
-  if (up.hcpLockFromWeek !== undefined) league.hcpLockFromWeek = numOr(up.hcpLockFromWeek, 1) || 1;
+  if (up.hcpLockFromWeek !== undefined) league.hcpLockFromWeek = numOr(up.hcpLockFromWeek, 0);
 
   db.write();
   res.json({ ok: true, league: normalizeLeague(league) });
@@ -412,9 +431,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,           // mutable live average
-    start_average: startAve,     // permanent baseline
-    hcp: initialHcp,
+    average: startAve,           // live
+    start_average: startAve,     // freeze fallback
+    hcp: initialHcp,             // manual baseline
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -444,8 +463,12 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (average != null) p.average = +average || 0;
   if (start_average != null) p.start_average = +start_average || 0;
 
+  // manual edit of handicap always respected (esp. for freeze)
   if (hcp === '' || hcp == null) {
-    p.hcp = league.mode === 'scratch' ? 0 : playerHandicapPerGame(league, p.average, null);
+    // leave as-is if freeze is active now; otherwise recalc from average
+    if (!inFreeze(league, Number.MAX_SAFE_INTEGER)) { // outside any freeze by default
+      p.hcp = league.mode === 'scratch' ? 0 : playerHandicapPerGame(league, p.average, null);
+    }
   } else {
     p.hcp = +hcp || 0;
   }
@@ -495,29 +518,14 @@ app.post('/api/teams', requireAuth, (req, res) => {
   db.write(); res.json({ id, name });
 });
 
-/* ===== Weeks ===== */
-app.post('/api/weeks', requireAuth, (req, res) => {
-  db.read();
-  const { weekNumber, date = null, pairings = [] } = req.body || {};
-  if (!weekNumber) return res.status(400).json({ error: 'weekNumber required' });
-  const weekId = nextId('weeks');
-  db.data.weeks.push({ id: weekId, league_id: req.league.id, week_number: +weekNumber, date });
-  for (const p of pairings) {
-    const id = nextId('matches');
-    db.data.matches.push({
-      id, league_id: req.league.id, week_id: weekId,
-      home_team_id: +p.homeTeamId, away_team_id: +p.awayTeamId,
-      home_score: 0, away_score: 0, home_points: 0, away_points: 0
-    });
-  }
-  db.write(); res.json({ id: weekId, weekNumber, date });
-});
-
-/* ===== Players directory (READ-ONLY, guaranteed Hcp display) ===== */
+/* ===== Players directory (respects freeze for DISPLAY) ===== */
 app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-  const upToWeek = req.query.week ? +req.query.week : null;
+
+  // If caller didn't pass a week filter, treat it as "current week 0" for early-season views,
+  // so the freeze from week 0 shows manual hcp on the roster screen pre-Week 1.
+  const upToWeek = req.query.week != null ? +req.query.week : 0;
 
   const leagueRaw  = (db.data.leagues || []).find(l => l.id === leagueId);
   const league = normalizeLeague(leagueRaw);
@@ -535,17 +543,19 @@ app.get('/api/players-with-teams', (req, res) => {
     const team_id = firstTeamByPlayer.get(p.id) ?? null;
     const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
-    // Effective average = live sheet average (if any), else starting/current avg
+    // Effective avg for post-freeze display
     const effectiveAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
 
-    // DISPLAY Hcp is always derived from effective average (no DB writes here)
-    const hcpDisplay = hcpDisplayFromEffectiveAverage(league, effectiveAvg);
+    // Display rule:
+    const showHcp = inFreeze(league, upToWeek)
+      ? manualOrStartHcp(league, p)                     // during freeze: manual (or start fallback)
+      : hcpDisplayFromEffectiveAverage(league, effectiveAvg); // after freeze: calculated
 
     return {
       id: p.id,
       name: p.name,
       gender: p.gender || null,
-      hcp: hcpDisplay,                 // UI shows this
+      hcp: showHcp,
       team_id,
       team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
       gms: st.gms, pts: st.pts, ave: st.ave,
@@ -557,7 +567,7 @@ app.get('/api/players-with-teams', (req, res) => {
   res.json(rows);
 });
 
-/* ===== Matches (list & simple score update) ===== */
+/* ===== Matches ===== */
 app.get('/api/matches', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -593,33 +603,19 @@ app.post('/api/matches/:id/score', requireAuth, (req, res) => {
 /* ===== Match Sheet (per-week, two teams, per-bowler games) ===== */
 function hcpForWeek(leagueRaw, weekNumber, player) {
   const league = normalizeLeague(leagueRaw);
-  const start = league.hcpLockFromWeek;
-  const len   = league.hcpLockWeeks;
-  const end   = start + Math.max(0, len) - 1;
-  const withinFreeze = len > 0 && weekNumber >= start && weekNumber <= end;
-
-  const stored = player.hcp;
-  const hasStored = (
-    stored !== null && stored !== undefined &&
-    Number.isFinite(+stored) && +stored >= 0 &&
-    !(+stored === 0 && (+player.average || 0) > 0)
-  );
-
-  if (withinFreeze) {
-    return hasStored
-      ? +stored
-      : playerHandicapPerGame(league, player.average, null);
+  if (inFreeze(league, weekNumber)) {
+    // During freeze always use manual value; fallback from start average if unset
+    return manualOrStartHcp(league, player);
   }
-  return hasStored
-    ? +stored
-    : playerHandicapPerGame(league, player.average, null);
+  // After freeze: derive from current player avg (already maintained by recompute)
+  return playerHandicapPerGame(league, player.average, null);
 }
 
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
   const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-  const weekNumber = +(req.query.weekNumber || 1);
+  const weekNumber = +(req.query.weekNumber || 0); // default to 0 works for early freeze views
   const homeTeamId = +(req.query.homeTeamId || 0);
   const awayTeamId = +(req.query.awayTeamId || 0);
 
@@ -725,7 +721,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     saved_at: new Date().toISOString()
   });
 
-  // recompute averages + write handicap according to freeze rules
+  // recompute averages + write handicap (freeze respected)
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
@@ -864,7 +860,9 @@ app.get('/api/standings/players', (req, res) => {
           const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
           const effAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
-          const hcpDisplay = hcpDisplayFromEffectiveAverage(league, effAvg);
+          const hcpDisplay = inFreeze(league, upToWeek ?? 0)
+            ? manualOrStartHcp(league, p)
+            : hcpDisplayFromEffectiveAverage(league, effAvg);
 
           return {
             player_id: p.id,
@@ -978,7 +976,7 @@ app.get('/api/sheet', (req, res) => {
   res.json(sheet);
 });
 
-// Delete a saved sheet → recompute to the latest remaining week
+// Delete a saved sheet → recompute to latest remaining week
 app.delete('/api/sheet', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
@@ -1023,5 +1021,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
 
