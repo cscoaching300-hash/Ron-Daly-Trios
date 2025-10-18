@@ -173,7 +173,7 @@ function rowHandicapSeries(leagueRaw, r){
   return rowScratchSeries(r) + (league.mode==='scratch' ? 0 : 3*num(r.hcp));
 }
 
-/* Build per-player stats from sheets up to week (averages floored) */
+/* Build per-player stats from sheets up to week */
 function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   const league = normalizeLeague(leagueRaw);
   const sheets = (db.data.sheets || [])
@@ -261,7 +261,8 @@ function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
   return manualOrStartHcp(league, player);
 }
 
-/* Recompute players as of a cutoff week (persisted fields) — manual hcp is NOT modified */
+/* Recompute players as of a cutoff week (persisted fields)
+   IMPORTANT: p.hcp is manual-only and is NOT modified here. */
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const league = normalizeLeague(leagueRaw);
   const sheets = (db.data.sheets || [])
@@ -291,11 +292,39 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
       const fallback = Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0);
       p.average = Math.floor(fallback);
     }
+    // DO NOT modify p.hcp here (manual-only).
   }
 }
 
 /* ===== Health ===== */
 app.get('/api/health', (req, res) => res.json({ ok: true, at: new Date().toISOString() }));
+
+/* ===== Auth: add /api/login ===== */
+// POST: { leagueId, pin } -> { ok, token, league }
+app.post('/api/login', (req, res) => {
+  db.read();
+  const { leagueId, pin } = req.body || {};
+  const id = +leagueId;
+  const league = (db.data.leagues || []).find(l => l.id === id);
+  if (!league) return res.status(404).json({ error: 'league_not_found' });
+  if (String(pin) !== String(league.pin)) return res.status(401).json({ error: 'invalid_pin' });
+
+  const token = tokenFor(id, league.pin);
+  res.json({ ok: true, token, league: { id: league.id, name: league.name } });
+});
+
+// Optional GET form: /api/login?leagueId=&pin=
+app.get('/api/login', (req, res) => {
+  db.read();
+  const id = +(req.query.leagueId || 0);
+  const pin = String(req.query.pin || '');
+  const league = (db.data.leagues || []).find(l => l.id === id);
+  if (!league) return res.status(404).json({ error: 'league_not_found' });
+  if (pin !== String(league.pin)) return res.status(401).json({ error: 'invalid_pin' });
+
+  const token = tokenFor(id, league.pin);
+  res.json({ ok: true, token, league: { id: league.id, name: league.name } });
+});
 
 /* ===== Leagues ===== */
 app.get('/api/leagues', (req, res) => { db.read(); res.json(db.data.leagues); });
@@ -397,9 +426,9 @@ app.post('/api/players', requireAuth, (req, res) => {
     id: nextId('players'),
     league_id: league.id,
     name: String(name),
-    average: startAve,           // live (floored)
-    start_average: startAve,     // freeze fallback (floored)
-    hcp: initialHcp,             // manual baseline (can be edited later)
+    average: startAve,
+    start_average: startAve,
+    hcp: initialHcp,
     gender: (gender === 'M' || gender === 'F') ? gender : null,
     created_at: new Date().toISOString()
   };
@@ -427,7 +456,6 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (average != null) p.average = Math.floor(+average || 0);
   if (start_average != null) p.start_average = Math.floor(+start_average || 0);
 
-  // Manual handicap: update ONLY if the 'hcp' key is present and valid.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
       p.hcp = Math.max(0, +hcp);
@@ -484,7 +512,6 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  // displayWeek decides freeze; statsUpTo controls aggregation (null = all weeks)
   const displayWeek = req.query.week != null ? +req.query.week : 0;
   const statsUpTo   = req.query.week != null ? +req.query.week : null;
 
@@ -538,7 +565,7 @@ app.get('/api/matches', (req, res) => {
   res.json(rows);
 });
 
-/* ===== Match Sheet (mirrors Players-page HCP outside freeze) ===== */
+/* ===== Match Sheet (now mirrors Players-page HCP outside freeze) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
@@ -644,7 +671,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   match.home_score = homeSeriesScratch;
   match.away_score = awaySeriesScratch;
 
-  // Team points per game + series, using HCP in handicap mode
+  // Team points per game + series (hcp when handicap mode)
   const W = num(league.teamPointsWin);
   const D = num(league.teamPointsDraw);
   const useHandicap = league.mode === 'handicap';
@@ -690,7 +717,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     saved_at: new Date().toISOString()
   });
 
-  // recompute averages ONLY; manual hcp is never changed here
+  // recompute averages ONLY; manual hcp never changed
   recomputePlayersUpToWeek(league, +weekNumber);
 
   db.write();
@@ -732,35 +759,10 @@ function sheetTotalsForMatch(leagueRaw, match) {
   const awayHsh = Math.max(0, ...awayRows.map(r => hSeries(r)));
 
   return {
-    sheet,
     homeScratch, awayScratch,
     homeHandicap, awayHandicap,
     homeHgs, awayHgs, homeHgh, awayHgh, homeHss, awayHss, homeHsh, awayHsh
   };
-}
-
-/* NEW: Singles points for a sheet (handicap head-to-head per game) */
-function singlesPointsForSheet(leagueRaw, sheet) {
-  const league = normalizeLeague(leagueRaw);
-  const W = num(league.indivPointsWin);
-  const D = num(league.indivPointsDraw);
-  const A = (sheet.homeGames || []).filter(r => r && r.playerId);
-  const B = (sheet.awayGames || []).filter(r => r && r.playerId);
-  const maxRows = Math.max(A.length, B.length);
-  let homePts = 0, awayPts = 0;
-  for (let i=0; i<maxRows; i++) {
-    const ra = A[i], rb = B[i];
-    if (!ra || !rb) continue;
-    const g = ['g1','g2','g3'];
-    for (const k of g) {
-      const aVal = num(ra[k]) + num(ra.hcp);
-      const bVal = num(rb[k]) + num(rb.hcp);
-      if (aVal > bVal) homePts += W;
-      else if (bVal > aVal) awayPts += W;
-      else { homePts += D; awayPts += D; }
-    }
-  }
-  return { homePts, awayPts };
 }
 
 /* ===== Standings (teams) ===== */
@@ -786,14 +788,12 @@ app.get('/api/standings', (req, res) => {
     const rows = teams.map(t => {
       const played = matches.filter(m => m.home_team_id === t.id || m.away_team_id === t.id);
 
-      let pinsS = 0, pinsH = 0, hgs = 0, hgh = 0, hss = 0, hsh = 0;
-      let teamPts = 0;     // <- TEAM points only (per game + series)
-      let indivPts = 0;    // <- Singles points
+      let pinsS = 0, pinsH = 0, hgs = 0, hgh = 0, hss = 0, hsh = 0, teamPts = 0;
       let matchesWithSheet = 0;
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
-        if (!totals) continue; // only count when a sheet exists
+        if (!totals) continue;
 
         matchesWithSheet += 1;
 
@@ -809,26 +809,11 @@ app.get('/api/standings', (req, res) => {
         hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
         hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
 
-        // team points come straight from the saved match
         teamPts += (isHome ? num(m.home_points) : num(m.away_points));
-
-        // singles points computed from the sheet rows
-        const sp = singlesPointsForSheet(league, totals.sheet);
-        indivPts += (isHome ? sp.homePts : sp.awayPts);
       }
 
       const games = matchesWithSheet * gamesPerWeek;
-      return {
-        id: t.id,
-        name: t.name,
-        games,
-        // Pts column (legacy) == TEAM points only:
-        won: teamPts,
-        // extras exposed for UI if you want them:
-        indivPts,
-        totalPts: teamPts + indivPts,
-        pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss
-      };
+      return { id: t.id, name: t.name, games, won: teamPts, pinsh: pinsH, pinss: pinsS, hgh, hgs, hsh, hss };
     });
 
     rows.sort((a,b)=> b.won - a.won || b.pinsh - a.pinsh || a.name.localeCompare(b.name));
@@ -837,6 +822,57 @@ app.get('/api/standings', (req, res) => {
   } catch (err) {
     console.error('Standings error:', err);
     res.status(500).json({ error: 'standings_failed', message: String(err?.message || err) });
+  }
+});
+
+/* ===== Individual standings (by team) ===== */
+app.get('/api/standings/players', (req, res) => {
+  try {
+    db.read();
+    const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
+    const upToWeek = req.query.week ? +req.query.week : null;
+
+    const leagueRaw   = (db.data.leagues || []).find(l => l && l.id === leagueId);
+    const league = normalizeLeague(leagueRaw);
+    if (!league) return res.json([]);
+
+    const teams   = (db.data.teams || []).filter(t => t && t.league_id === league.id);
+    const tps     = (db.data.team_players || []).filter(tp => tp && tp.league_id === league.id);
+    const players = (db.data.players || []).filter(p => p && p.league_id === league.id);
+
+    const statsMap = computePlayerStatsForLeague(league, upToWeek);
+    const displayWeek = (upToWeek != null) ? +upToWeek : 0;
+
+    const groups = teams.map(team => {
+      const roster = tps
+        .filter(tp => tp.team_id === team.id)
+        .map(tp => players.find(p => p.id === tp.player_id))
+        .filter(Boolean)
+        .map(p => {
+          const st = statsMap.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
+
+          const effAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
+          const hcpDisplay = hcpDisplayForList(league, displayWeek, p, effAvg);
+
+          return {
+            player_id: p.id,
+            name: p.name,
+            hcp: hcpDisplay,
+            ave: st.ave,
+            gms: st.gms, pts: st.pts,
+            pinss: st.pinss, pinsh: st.pinsh,
+            hgs: st.hgs, hgh: st.hgh, hss: st.hss, hsh: st.hsh
+          };
+        })
+        .sort((a,b)=> b.pts - a.pts || b.pinsh - a.pinsh || a.name.localeCompare(b.name));
+
+      return { team: { id: team.id, name: team.name }, players: roster };
+    });
+
+    res.json(groups);
+  } catch (err) {
+    console.error('player standings error:', err);
+    res.status(500).json({ error: 'player_standings_failed', message: String(err?.message || err) });
   }
 });
 
@@ -1003,6 +1039,9 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   db.write();
   res.json({ ok: true, removed: before - after });
 });
+
+/* ===== Return JSON 404 for unknown API routes (prevents HTML in API) ===== */
+app.use('/api', (req, res) => res.status(404).json({ error: 'not_found' }));
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
