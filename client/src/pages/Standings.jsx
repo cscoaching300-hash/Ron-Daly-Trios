@@ -7,40 +7,54 @@ import { getAuthHeaders } from '../lib/auth.js';
 export default function Standings() {
   const [params] = useSearchParams();
   const week = params.get('week'); // string or null
+
   const [league, setLeague] = useState(null);
   const [teams, setTeams] = useState([]);
   const [playerGroups, setPlayerGroups] = useState([]);
+  const [enteredWeekOptions, setEnteredWeekOptions] = useState([]);
+
   const authHeaders = useMemo(() => getAuthHeaders(), []);
 
-  // Load current league (to know total weeks, name, etc.)
+  // Load current league (optional, just for title / total weeks fallback)
   useEffect(() => {
-    async function loadLeague() {
+    (async () => {
       const res = await fetch('/api/leagues');
       const all = await res.json();
       const id = Number(authHeaders['x-league-id'] || 0);
       setLeague(all.find(l => l.id === id) || null);
-    }
-    loadLeague();
+    })();
+  }, [authHeaders]);
+
+  // Load **entered** weeks for dropdown
+  useEffect(() => {
+    (async () => {
+      const res = await fetch(`/api/weeks?enteredOnly=1`, { headers: authHeaders });
+      const weeks = await res.json(); // [{ id, week_number, date, sheet_count }]
+      // Build labels like "Week 4 — 2024-10-03" when a date exists
+      const opts = weeks.map(w => {
+        const iso = w.date ? new Date(w.date).toISOString().slice(0, 10) : null;
+        return { value: String(w.week_number), label: iso ? `Week ${w.week_number} — ${iso}` : `Week ${w.week_number}` };
+      });
+      setEnteredWeekOptions(opts);
+    })();
   }, [authHeaders]);
 
   // Fetch team standings (week-aware)
   useEffect(() => {
-    async function loadTeams() {
+    (async () => {
       const q = week ? `?week=${encodeURIComponent(week)}` : '';
       const res = await fetch(`/api/standings${q}`, { headers: authHeaders });
       setTeams(await res.json());
-    }
-    loadTeams();
+    })();
   }, [authHeaders, week]);
 
   // Fetch individual standings (week-aware)
   useEffect(() => {
-    async function loadPlayers() {
+    (async () => {
       const q = week ? `?week=${encodeURIComponent(week)}` : '';
       const res = await fetch(`/api/standings/players${q}`, { headers: authHeaders });
       setPlayerGroups(await res.json());
-    }
-    loadPlayers();
+    })();
   }, [authHeaders, week]);
 
   const maxWeeks = league?.weeks ? Number(league.weeks) : 20;
@@ -49,7 +63,9 @@ export default function Standings() {
     <div style={{ display:'grid', gap:16 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <h2 style={{ margin:0 }}>Standings{week ? ` – Week ${week}` : ''}</h2>
-        <WeekPicker maxWeeks={maxWeeks} />
+        {/* Pass the options so the picker shows only entered weeks.
+            It will fall back to 1..maxWeeks if options is empty. */}
+        <WeekPicker options={enteredWeekOptions} maxWeeks={maxWeeks} />
       </div>
 
       {/* Team standings */}
@@ -138,4 +154,3 @@ export default function Standings() {
     </div>
   );
 }
-

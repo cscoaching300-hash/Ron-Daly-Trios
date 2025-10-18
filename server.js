@@ -839,6 +839,8 @@ app.get('/api/standings/players', (req, res) => {
 
 /* ===== Weeks: entered-only helpers ===== */
 
+//* ===== Weeks: entered-only helpers ===== */
+
 // Distinct weeks that have at least one saved sheet (i.e., entered weeks)
 app.get('/api/weeks/entered', (req, res) => {
   db.read();
@@ -847,7 +849,10 @@ app.get('/api/weeks/entered', (req, res) => {
   const allWeeks  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
   const allSheets = (db.data.sheets || []).filter(s => s.league_id === leagueId);
 
+  // Unique week_numbers present in sheets
   const enteredWeekNumbers = Array.from(new Set(allSheets.map(s => s.week_number))).sort((a,b) => a - b);
+
+  // Map weeks by week_number to fetch dates (if weeks were created with dates)
   const byWeekNumber = new Map(allWeeks.map(w => [w.week_number, w]));
 
   const result = enteredWeekNumbers.map(wn => ({
@@ -858,6 +863,7 @@ app.get('/api/weeks/entered', (req, res) => {
 
   res.json(result);
 });
+
 
 /* ===== Archive / Sheets ===== */
 app.get('/api/weeks', (req, res) => {
