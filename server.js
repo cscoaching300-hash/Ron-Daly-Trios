@@ -639,15 +639,48 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-  const sumSeries = (arr=[]) => arr.reduce((s, r) => s + (+r.g1||0) + (+r.g2||0) + (+r.g3||0), 0);
-  const homeSeriesScratch = sumSeries(homeGames);
-  const awaySeriesScratch = sumSeries(awayGames);
-  match.home_score = homeSeriesScratch;
-  match.away_score = awaySeriesScratch;
+// Scratch series (stored like before)
+const sumSeriesScratch = (rows=[]) =>
+  rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
 
-  const [hp, ap] = teamPointsFor(league, homeSeriesScratch, awaySeriesScratch);
-  match.home_points = hp;
-  match.away_points = ap;
+const homeSeriesScratch = sumSeriesScratch(homeGames || []);
+const awaySeriesScratch = sumSeriesScratch(awayGames || []);
+match.home_score = homeSeriesScratch;
+match.away_score = awaySeriesScratch;
+
+// --- New: award team points per game + series, in scratch/handicap per league mode ---
+const W = num(league.teamPointsWin);
+const D = num(league.teamPointsDraw);
+const useHandicap = league.mode === 'handicap';
+
+const gameTotal = (rows, gKey) =>
+  (rows || []).reduce(
+    (s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0),
+    0
+  );
+
+let homePts = 0, awayPts = 0;
+for (const gKey of ['g1','g2','g3']) {
+  const h = gameTotal(homeGames, gKey);
+  const a = gameTotal(awayGames, gKey);
+  if (h > a) homePts += W;
+  else if (a > h) awayPts += W;
+  else { homePts += D; awayPts += D; }
+}
+
+// Series (scratch or handicap depending on mode)
+const seriesTotal = (rows) =>
+  ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
+
+const hs = seriesTotal(homeGames);
+const as = seriesTotal(awayGames);
+if (hs > as) homePts += W;
+else if (as > hs) awayPts += W;
+else { homePts += D; awayPts += D; }
+
+match.home_points = homePts;
+match.away_points = awayPts;
+
 
   // overwrite sheet for same league/week/teams
   db.data.sheets = (db.data.sheets || []).filter(s =>
