@@ -589,6 +589,10 @@ app.get('/api/match-sheet', (req, res) => {
   const homeSubs = players.filter(p => !homeRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
   const awaySubs = players.filter(p => !awayRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
 
+  // Provide meta so UI can show "out of 16" etc.
+  const W = num(league.teamPointsWin);
+  const D = num(league.teamPointsDraw);
+
   res.json({
     league: {
       id: league.id,
@@ -603,6 +607,12 @@ app.get('/api/match-sheet', (req, res) => {
       hcpLockFromWeek: league.hcpLockFromWeek,
     },
     weekNumber,
+    scoring: {
+      perGameWin: W,
+      perGameDraw: D,
+      perSideMax: 4 * W, // 3 games + 1 series
+      usesHandicap: league.mode === 'handicap'
+    },
     homeTeam: home ? { id: home.id, name: home.name } : null,
     awayTeam: away ? { id: away.id, name: away.name } : null,
     homeRoster, awayRoster, homeSubs, awaySubs
@@ -1021,6 +1031,7 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
   db.write();
   res.json({ ok: true, removed: before - after });
 });
+
 
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
