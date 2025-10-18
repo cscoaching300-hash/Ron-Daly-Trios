@@ -121,6 +121,12 @@ function inFreeze(league, weekNumber) {
   return len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
 }
 
+/* ===== Common game-keys helper (respects league.gamesPerWeek) ===== */
+function gameKeys(league) {
+  const n = Math.max(1, +league.gamesPerWeek || 3);
+  return Array.from({ length: n }, (_, i) => `g${i + 1}`);
+}
+
 /* ===== Handicap/Stats utils ===== */
 function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
   if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp; // explicit override
@@ -167,15 +173,20 @@ function cmpVal(leagueRaw, g, hcp) {
   const scratch = num(g);
   return league.mode === 'scratch' ? scratch : scratch + num(hcp);
 }
-function rowScratchSeries(r){ return num(r.g1)+num(r.g2)+num(r.g3); }
+function rowScratchSeries(league, r){
+  return gameKeys(league).reduce((s, k) => s + num(r[k]), 0);
+}
 function rowHandicapSeries(leagueRaw, r){
   const league = normalizeLeague(leagueRaw);
-  return rowScratchSeries(r) + (league.mode==='scratch' ? 0 : 3*num(r.hcp));
+  const addH = league.mode==='scratch' ? 0 : num(r.hcp);
+  return gameKeys(league).reduce((s, k) => s + num(r[k]) + addH, 0);
 }
 
 /* Build per-player stats from sheets up to week */
 function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
   const league = normalizeLeague(leagueRaw);
+  const gKeys = gameKeys(league);
+
   const sheets = (db.data.sheets || [])
     .filter(s => s.league_id === league.id && (upToWeek == null || s.week_number <= upToWeek));
   const INDIV_WIN  = num(league.indivPointsWin);
@@ -195,7 +206,7 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
     for (let i = 0; i < maxRows; i++) {
       const ra = A[i], rb = B[i];
 
-      for (const gKey of ['g1','g2','g3']) {
+      for (const gKey of gKeys) {
         const aVal = ra ? cmpVal(league, ra[gKey], ra?.hcp) : null;
         const bVal = rb ? cmpVal(league, rb[gKey], rb?.hcp) : null;
 
@@ -228,12 +239,12 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
 
       if (ra) {
         const aS = ensure(+ra.playerId);
-        aS.hss = Math.max(aS.hss, rowScratchSeries(ra));
+        aS.hss = Math.max(aS.hss, rowScratchSeries(league, ra));
         aS.hsh = Math.max(aS.hsh, rowHandicapSeries(league, ra));
       }
       if (rb) {
         const bS = ensure(+rb.playerId);
-        bS.hss = Math.max(bS.hss, rowScratchSeries(rb));
+        bS.hss = Math.max(bS.hss, rowScratchSeries(league, rb));
         bS.hsh = Math.max(bS.hsh, rowHandicapSeries(league, rb));
       }
     }
@@ -265,6 +276,8 @@ function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
    IMPORTANT: p.hcp is manual-only and is NOT modified here. */
 function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
   const league = normalizeLeague(leagueRaw);
+  const gKeys = gameKeys(league);
+
   const sheets = (db.data.sheets || [])
     .filter(s => s.league_id === league.id && s.week_number <= upToWeek);
 
@@ -273,8 +286,8 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
     if (!row?.playerId) return;
     const pid = +row.playerId;
     const a = agg.get(pid) || { gms:0, pins:0 };
-    a.gms  += 3;
-    a.pins += (num(row.g1) + num(row.g2) + num(row.g3));
+    a.gms  += gKeys.length;
+    a.pins += gKeys.reduce((s, k) => s + num(row[k]), 0);
     agg.set(pid, a);
   };
   for (const s of sheets) {
@@ -589,7 +602,7 @@ app.get('/api/match-sheet', (req, res) => {
   const homeSubs = players.filter(p => !homeRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
   const awaySubs = players.filter(p => !awayRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
 
-  // Provide meta so UI can show "out of 16" etc.
+  // Provide meta so UI can show "out of X"
   const W = num(league.teamPointsWin);
   const D = num(league.teamPointsDraw);
 
@@ -610,7 +623,7 @@ app.get('/api/match-sheet', (req, res) => {
     scoring: {
       perGameWin: W,
       perGameDraw: D,
-      perSideMax: 4 * W, // 3 games + 1 series
+      perSideMax: (league.gamesPerWeek + 1) * W, // dynamic: games + series
       usesHandicap: league.mode === 'handicap'
     },
     homeTeam: home ? { id: home.id, name: home.name } : null,
@@ -622,6 +635,7 @@ app.get('/api/match-sheet', (req, res) => {
 app.post('/api/match-sheet', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
+  const gKeys = gameKeys(league);
   const { weekNumber, homeTeamId, awayTeamId, homeGames, awayGames } = req.body || {};
 
   if (!weekNumber || !homeTeamId || !awayTeamId)
@@ -650,7 +664,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
 
   // Scratch series (stored like before)
   const sumSeriesScratch = (rows=[]) =>
-    rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
+    rows.reduce((s, r) => s + gKeys.reduce((t,k)=>t+num(r[k]),0), 0);
 
   const homeSeriesScratch = sumSeriesScratch(homeGames || []);
   const awaySeriesScratch = sumSeriesScratch(awayGames || []);
@@ -669,7 +683,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     );
 
   let homePts = 0, awayPts = 0;
-  for (const gKey of ['g1','g2','g3']) {
+  for (const gKey of gKeys) {
     const h = gameTotal(homeGames, gKey);
     const a = gameTotal(awayGames, gKey);
     if (h > a) homePts += W;
@@ -678,7 +692,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   }
 
   const seriesTotal = (rows) =>
-    ['g1','g2','g3'].reduce((s, gk) => s + gameTotal(rows, gk), 0);
+    gKeys.reduce((s, gk) => s + gameTotal(rows, gk), 0);
 
   const hs = seriesTotal(homeGames);
   const as = seriesTotal(awayGames);
@@ -711,8 +725,11 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
 });
 
 /* ===== Sheet-driven totals for team standings ===== */
-const sSeries = r => (num(r.g1) + num(r.g2) + num(r.g3));
-const hSeries = r => (num(r.g1)+num(r.hcp) + num(r.g2)+num(r.hcp) + num(r.g3)+num(r.hcp));
+function sSeries(league, r){ return gameKeys(league).reduce((s,k)=>s+num(r[k]),0); }
+function hSeries(league, r){
+  const addH = league.mode==='scratch' ? 0 : num(r.hcp);
+  return gameKeys(league).reduce((s,k)=>s+num(r[k])+addH,0);
+}
 
 function sheetTotalsForMatch(leagueRaw, match) {
   const league = normalizeLeague(leagueRaw);
@@ -730,19 +747,24 @@ function sheetTotalsForMatch(leagueRaw, match) {
   const homeRows = sheet.homeGames || [];
   const awayRows = sheet.awayGames || [];
 
-  const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
-  const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
-  const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
-  const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(r), 0);
+  const homeScratch = homeRows.reduce((a,r)=>a+sSeries(league,r), 0);
+  const awayScratch = awayRows.reduce((a,r)=>a+sSeries(league,r), 0);
+  const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(league,r), 0);
+  const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(league,r), 0);
 
-  const homeHgs = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
-  const awayHgs = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
-  const homeHgh = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
-  const awayHgh = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
-  const homeHss = Math.max(0, ...homeRows.map(r => sSeries(r)));
-  const awayHss = Math.max(0, ...awayRows.map(r => sSeries(r)));
-  const homeHsh = Math.max(0, ...homeRows.map(r => hSeries(r)));
-  const awayHsh = Math.max(0, ...awayRows.map(r => hSeries(r)));
+  const gKeys = gameKeys(league);
+  const maxWith = (rows, f) => Math.max(0, ...rows.map(r => f(r)));
+  const highGameScratch = r => Math.max(...gKeys.map(k => num(r[k]) || 0));
+  const highGameHandicap = r => Math.max(...gKeys.map(k => num(r[k]) + (league.mode==='scratch'?0:num(r.hcp))));
+
+  const homeHgs = maxWith(homeRows, highGameScratch);
+  const awayHgs = maxWith(awayRows, highGameScratch);
+  const homeHgh = maxWith(homeRows, highGameHandicap);
+  const awayHgh = maxWith(awayRows, highGameHandicap);
+  const homeHss = maxWith(homeRows, r => sSeries(league,r));
+  const awayHss = maxWith(awayRows, r => sSeries(league,r));
+  const homeHsh = maxWith(homeRows, r => hSeries(league,r));
+  const awayHsh = maxWith(awayRows, r => hSeries(league,r));
 
   return {
     homeScratch, awayScratch,
@@ -938,12 +960,12 @@ app.get('/api/sheets', (req, res) => {
         const homeRows = s.homeGames || [];
         const awayRows = s.awayGames || [];
         const nn = v => (Number.isFinite(+v) ? +v : 0);
-        const sSeries = r => (nn(r.g1) + nn(r.g2) + nn(r.g3));
-        const hSeries = r => (nn(r.g1)+nn(r.hcp) + nn(r.g2)+nn(r.hcp) + nn(r.g3)+nn(r.hcp));
-        const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
-        const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
-        const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
-        const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(r), 0);
+        const sumSeries = (rows, useH) => rows.reduce((a,r)=>
+          a + gameKeys({gamesPerWeek:Math.max(1,3)}).reduce((t,k)=>t+nn(r[k])+(useH?nn(r.hcp):0),0),0);
+        const homeScratch = sumSeries(homeRows, false);
+        const awayScratch = sumSeries(awayRows, false);
+        const homeHandicap = sumSeries(homeRows, true);
+        const awayHandicap = sumSeries(awayRows, true);
         return { homeScratch, awayScratch, homeHandicap, awayHandicap };
       })();
 
@@ -1043,3 +1065,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
+
