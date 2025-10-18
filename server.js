@@ -42,9 +42,11 @@ for (const k of Object.keys(defaultData)) {
 /* ---- migration: ensure start_average on all players ---- */
 db.data.players = (db.data.players || []).map(p => {
   const hasStart = Number.isFinite(+p.start_average);
-  return hasStart ? p : { ...p, start_average: Number.isFinite(+p.average) ? +p.average : 0 };
+  const startAverage = hasStart ? +p.start_average : (Number.isFinite(+p.average) ? +p.average : 0);
+  return { ...p, start_average: startAverage };
 });
 db.write();
+
 
 /* ===== Uploads (logos) ===== */
 const uploadsDir = path.join(DATA_DIR, 'uploads');
@@ -129,6 +131,20 @@ function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
   const pct  = league.handicapPercent / 100;
   return Math.max(0, Math.round((base - (+avg || 0)) * pct));
 }
+
+// helper – same rule both pages use for display
+function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
+  if (inFreeze(league, displayWeek)) {
+    // frozen: manual-or-start, always
+    return manualOrStartHcp(league, player);
+  }
+  // unfrozen: calculated if we have a positive effective avg; else manual-or-start
+  if (Number.isFinite(+effectiveAvg) && +effectiveAvg > 0) {
+    return hcpDisplayFromEffectiveAverage(league, +effectiveAvg);
+  }
+  return manualOrStartHcp(league, player);
+}
+
 
 // Manual or fallback from start average (used during FREEZE)
 function manualOrStartHcp(league, player) {
@@ -534,8 +550,9 @@ app.get('/api/players-with-teams', (req, res) => {
   // week handling:
   // - displayWeek: used to decide if we're inside the freeze window (default 0 to allow pre-week 1 freeze)
   // - statsUpTo: used to aggregate stats (null = all weeks, so stats don't disappear)
-  const displayWeek = req.query.week != null ? +req.query.week : 0;
-  const statsUpTo   = req.query.week != null ? +req.query.week : null;
+const displayWeek = req.query.week != null ? +req.query.week : 0;
+const statsUpTo   = req.query.week != null ? +req.query.week : null;
+const stats = league ? computePlayerStatsForLeague(league, statsUpTo) : new Map();
 
   const leagueRaw = (db.data.leagues || []).find(l => l.id === leagueId);
   const league = normalizeLeague(leagueRaw);
@@ -555,8 +572,7 @@ app.get('/api/players-with-teams', (req, res) => {
     const st = stats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
 
     const effectiveAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
-
-    const showHcp = inFreeze(league, displayWeek)
+const showHcp = hcpDisplayForList(league, displayWeek, p, effectiveAvg);
       ? manualOrStartHcp(league, p)                      // during freeze: manual (or start fallback)
       : hcpDisplayFromEffectiveAverage(league, effectiveAvg); // after freeze: calculated from effective avg
 
@@ -621,18 +637,26 @@ function hcpForWeek(leagueRaw, weekNumber, player) {
   const withinFreeze = len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
 
   const hasManual = player.hcp !== null && player.hcp !== undefined && Number.isFinite(+player.hcp) && +player.hcp >= 0;
-  const startAvg = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
+  const startAvg  = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
 
-  // During the freeze: manual (if any), else use starting average
+  // During the freeze: manual (if present), else compute from START average
   if (withinFreeze) {
     if (hasManual) return +player.hcp;
     return playerHandicapPerGame(league, startAvg, null);
   }
 
-  // After the freeze: use current avg; if it's missing/zero, fall back to start average
-  const effAvg = (+player.average || 0) > 0 ? +player.average : startAvg;
-  return playerHandicapPerGame(league, effAvg, null);
+  // After the freeze: compute from CURRENT average (if it exists), else do not return 0 — fall back to manual/start
+  const current = Number.isFinite(+player.average) ? +player.average : 0;
+  if (current > 0) {
+    return playerHandicapPerGame(league, current, null);
+  }
+
+  // Defensive fallback for post-freeze weeks with no games yet:
+  // prefer manual (if set), else compute from start average
+  if (hasManual) return +player.hcp;
+  return playerHandicapPerGame(league, startAvg, null);
 }
+
 
 
 app.get('/api/match-sheet', (req, res) => {
@@ -886,7 +910,9 @@ app.get('/api/standings/players', (req, res) => {
          const effAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
 const displayWeek = (upToWeek != null) ? +upToWeek : 0;
 
-const hcpDisplay = inFreeze(league, displayWeek)
+
+const effAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
+const hcpDisplay = hcpDisplayForList(league, displayWeek, p, effAvg);
   ? manualOrStartHcp(league, p)                           // frozen weeks: manual/start
   : hcpDisplayFromEffectiveAverage(league, effAvg);       // otherwise: calculated
 
