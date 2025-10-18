@@ -36,46 +36,6 @@ function pointsOutcome(a, b, winPts, drawPts) {
   return a > b ? [winPts, 0] : [0, winPts]
 }
 
-/** Compute team points per game + series from processed rows (have g1h/g2h/g3h). */
-function computeTeamPointsRow(league, ourRows = [], oppRows = []) {
-  const gamesPerWeek = Math.max(1, +league?.gamesPerWeek || 3)
-  const W = +league?.teamPointsWin || 0
-  const D = +league?.teamPointsDraw || 0
-  const useH = league?.mode === 'handicap'
-
-  const gKeys = Array.from({ length: gamesPerWeek }, (_, i) => `g${i + 1}`)
-
-  const gamePins = (rows, key) =>
-    rows.reduce((s, r) => {
-      if (useH) return s + num(r[`${key}h`]) // processed rows: g1h/g2h/g3h
-      return s + num(r[key])
-    }, 0)
-
-  const perGamePts = []
-  let totalPts = 0
-
-  for (const k of gKeys) {
-    const our = gamePins(ourRows, k)
-    const opp = gamePins(oppRows, k)
-    if (our > opp) { perGamePts.push(W); totalPts += W }
-    else if (opp > our) { perGamePts.push(0) }
-    else { perGamePts.push(D); totalPts += D }
-  }
-
-  const seriesPins = rows => gKeys.reduce((s, k) => s + gamePins(rows, k), 0)
-  const ourSeries = seriesPins(ourRows)
-  const oppSeries = seriesPins(oppRows)
-  const seriesPts = ourSeries > oppSeries ? W : (oppSeries > ourSeries ? 0 : D)
-  totalPts += seriesPts
-
-  return {
-    perGamePts,      // array length = gamesPerWeek
-    seriesPts,
-    totalPts,
-    perSideMax: (gamesPerWeek + 1) * W
-  }
-}
-
 /**
  * One side of the sheet (home/away)
  */
@@ -87,9 +47,12 @@ function TeamTable({
   setValues,
   gamesPerWeek,
   opponentRowsProcessed,
+  opponentRowsRaw,
   indivWin,
   indivDraw,
-  league // pass whole league so we can compute team points row consistently
+  teamWin,
+  teamDraw,
+  useHandicap
 }) {
   // ensure at least 3 slots on first mount for this table
   useEffect(() => {
@@ -144,8 +107,34 @@ function TeamTable({
 
   const singlesTotal = singlesPts.reduce((s,v)=>s+v,0)
 
-  // NEW: team points row (per-game + series)
-  const teamPtsRow = computeTeamPointsRow(league, rows, opponentRowsProcessed || [])
+  // Opponent totals (scratch & with handicap)
+  const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
+    g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
+  }), { g1:0, g2:0, g3:0 })
+
+  const oppHcpTotals = (opponentRowsProcessed || []).reduce((a, r) => ({
+    g1h: a.g1h + num(r.g1h), g2h: a.g2h + num(r.g2h), g3h: a.g3h + num(r.g3h)
+  }), { g1h:0, g2h:0, g3h:0 })
+
+  // Team game points per game + series
+  const g1Us   = useHandicap ? totals.g1h : totals.g1
+  const g2Us   = useHandicap ? totals.g2h : totals.g2
+  const g3Us   = useHandicap ? totals.g3h : totals.g3
+  const g1Them = useHandicap ? oppHcpTotals.g1h : oppScratchTotals.g1
+  const g2Them = useHandicap ? oppHcpTotals.g2h : oppScratchTotals.g2
+  const g3Them = useHandicap ? oppHcpTotals.g3h : oppScratchTotals.g3
+
+  const [g1Pts] = pointsOutcome(g1Us, g1Them, teamWin, teamDraw)
+  const [g2Pts] = pointsOutcome(g2Us, g2Them, teamWin, teamDraw)
+  const [g3Pts] = pointsOutcome(g3Us, g3Them, teamWin, teamDraw)
+
+  const seriesUs   = useHandicap ? totals.seriesH : totals.series
+  const seriesThem = useHandicap
+    ? (oppHcpTotals.g1h + oppHcpTotals.g2h + oppHcpTotals.g3h)
+    : (oppScratchTotals.g1 + oppScratchTotals.g2 + oppScratchTotals.g3)
+
+  const [seriesPts] = pointsOutcome(seriesUs, seriesThem, teamWin, teamDraw)
+  const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
   const addRow = () => setValues(v => [...v, { playerId:'', g1:'', g2:'', g3:'', hcp:0 }])
   const removeRow = (idx) => setValues(v => v.filter((_,i)=>i!==idx))
@@ -217,7 +206,6 @@ function TeamTable({
                 </td>
               </tr>
             ))}
-
             {/* Totals row */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
@@ -232,26 +220,19 @@ function TeamTable({
               <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
               <td style={td}>—</td>
             </tr>
-
-            {/* NEW: Team Points row (per-game + series) */}
+            {/* NEW: Team points row (per game + series) */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Points</td>
               <td style={td}>—</td>
-              {/* Leave scratch G columns blank; place points under +H columns since handicap is applied there when enabled */}
+              <td style={td}>{g1Pts}</td>
+              <td style={td}>{g2Pts}</td>
+              <td style={td}>{g3Pts}</td>
               <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>—</td>
-              {teamPtsRow.perGamePts.map((p, i) => (
-                <td key={`tp-${i}`} style={{...td, fontWeight:700, textAlign:'center'}}>{p}</td>
-              ))}
-              <td style={{...td, fontWeight:700, textAlign:'center'}}>{teamPtsRow.seriesPts}</td>
-              <td style={{...td, fontWeight:700, textAlign:'center'}}>{teamPtsRow.totalPts}</td>
+              <td style={td}>{seriesPts}</td>
+              <td style={{...td, fontWeight:700}}>{teamPtsTotal}</td>
               <td style={td}>—</td>
-            </tr>
-            <tr>
-              <td colSpan={11} className="muted" style={{...td, fontSize:12}}>
-                Max this side: {teamPtsRow.perSideMax}
-              </td>
             </tr>
           </tbody>
         </table>
@@ -336,6 +317,9 @@ export default function EnterScores() {
   const gamesPerWeek = +sheet?.league?.gamesPerWeek || 3
   const indivWin = +sheet?.league?.indivPointsWin || 0
   const indivDraw = +sheet?.league?.indivPointsDraw || 0
+  const teamWin  = +sheet?.league?.teamPointsWin || 0
+  const teamDraw = +sheet?.league?.teamPointsDraw || 0
+  const useHandicap = (sheet?.league?.mode === 'handicap')
 
   // processed rows for H2H comparison
   const process = rows => rows.map(v => {
@@ -346,17 +330,44 @@ export default function EnterScores() {
   const homeProcessed = useMemo(() => process(homeVals), [homeVals])
   const awayProcessed = useMemo(() => process(awayVals), [awayVals])
 
-  const sumSeries = rows => rows.reduce((s,r)=> s + num(r.g1)+num(r.g2)+num(r.g3), 0)
-  const homeSeries = sumSeries(homeVals)
-  const awaySeries = sumSeries(awayVals)
+  // --- Team points (per game + series) for the summary ---
+  const totalsFor = (rows, processed) => ({
+    scratch: {
+      g1: rows.reduce((s,r)=>s+num(r.g1),0),
+      g2: rows.reduce((s,r)=>s+num(r.g2),0),
+      g3: rows.reduce((s,r)=>s+num(r.g3),0),
+    },
+    hcp: {
+      g1: processed.reduce((s,r)=>s+num(r.g1h),0),
+      g2: processed.reduce((s,r)=>s+num(r.g2h),0),
+      g3: processed.reduce((s,r)=>s+num(r.g3h),0),
+    }
+  })
 
-  // NEW: full team points breakdown for summary (per game + series)
-  const teamPointsBreakdown = useMemo(() => {
-    if (!sheet?.league) return null
-    const home = computeTeamPointsRow(sheet.league, homeProcessed, awayProcessed)
-    const away = computeTeamPointsRow(sheet.league, awayProcessed, homeProcessed)
-    return { home, away }
-  }, [sheet?.league, homeProcessed, awayProcessed])
+  const homeT = totalsFor(homeVals, homeProcessed)
+  const awayT = totalsFor(awayVals, awayProcessed)
+
+  const useG = (totals, which) => useHandicap ? totals.hcp[which] : totals.scratch[which]
+  const perGame = ['g1','g2','g3'].reduce((acc, gk) => {
+    const [hPts, aPts] = pointsOutcome(useG(homeT, gk), useG(awayT, gk), teamWin, teamDraw)
+    acc.home += hPts; acc.away += aPts; return acc
+  }, { home:0, away:0 })
+
+  const homeSeries = homeVals.reduce((s,r)=> s + num(r.g1)+num(r.g2)+num(r.g3), 0)
+  const awaySeries = awayVals.reduce((s,r)=> s + num(r.g1)+num(r.g2)+num(r.g3), 0)
+  const homeSeriesH = useG(homeT, 'g1') + useG(homeT, 'g2') + useG(homeT, 'g3')
+  const awaySeriesH = useG(awayT, 'g1') + useG(awayT, 'g2') + useG(awayT, 'g3')
+
+  const [seriesHomePts, seriesAwayPts] = pointsOutcome(
+    useHandicap ? homeSeriesH : homeSeries,
+    useHandicap ? awaySeriesH : awaySeries,
+    teamWin, teamDraw
+  )
+
+  const teamPoints = {
+    home: perGame.home + seriesHomePts,
+    away: perGame.away + seriesAwayPts
+  }
 
   // singles totals across the table
   const singlesTotals = useMemo(() => {
@@ -373,6 +384,12 @@ export default function EnterScores() {
     }
     return { homePts, awayPts }
   }, [homeProcessed, awayProcessed, indivWin, indivDraw])
+
+  // Total points = team + singles
+  const totalPoints = {
+    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
+    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
+  }
 
   const save = async () => {
     if (!sheet) return alert('Pick week and teams, then Load.')
@@ -413,6 +430,10 @@ export default function EnterScores() {
             {teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         </label>
+        <div style={{display:'flex', gap:8, alignItems:'end', justifyContent:'flex-end'}}>
+          <button className="button" onClick={() => load()}>Load sheet</button>
+          <button className="button primary" onClick={save}>Save sheet</button>
+        </div>
       </div>
 
       <div style={{display:'flex', gap:12, alignItems:'stretch'}}>
@@ -424,9 +445,12 @@ export default function EnterScores() {
           setValues={setHomeVals}
           gamesPerWeek={gamesPerWeek}
           opponentRowsProcessed={awayProcessed}
+          opponentRowsRaw={awayVals}
           indivWin={indivWin}
           indivDraw={indivDraw}
-          league={sheet?.league}
+          teamWin={teamWin}
+          teamDraw={teamDraw}
+          useHandicap={useHandicap}
         />
         <TeamTable
           title={sheet?.awayTeam?.name || 'Team B'}
@@ -436,9 +460,12 @@ export default function EnterScores() {
           setValues={setAwayVals}
           gamesPerWeek={gamesPerWeek}
           opponentRowsProcessed={homeProcessed}
+          opponentRowsRaw={homeVals}
           indivWin={indivWin}
           indivDraw={indivDraw}
-          league={sheet?.league}
+          teamWin={teamWin}
+          teamDraw={teamDraw}
+          useHandicap={useHandicap}
         />
       </div>
 
@@ -451,14 +478,11 @@ export default function EnterScores() {
             {(sheet?.homeTeam?.name || 'Team A')} {homeSeries} — {awaySeries} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div style={{fontSize:18}}>
-            <strong>Team Points (per game + series):</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')}{' '}
-            {teamPointsBreakdown?.home.totalPts ?? 0} — {teamPointsBreakdown?.away.totalPts ?? 0}{' '}
-            {(sheet?.awayTeam?.name || 'Team B')}
+            <strong>Team Points (games + series):</strong>{' '}
+            {(sheet?.homeTeam?.name || 'Team A')} {teamPoints.home} — {teamPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:14}}>
-            {sheet?.league?.mode === 'handicap' ? 'Handicap applies.' : 'Scratch.'}{' '}
-            Max per side: {teamPointsBreakdown?.home.perSideMax ?? ((+sheet?.league?.teamPointsWin || 0) * ((+sheet?.league?.gamesPerWeek || 3)+1))}
+            Team points are awarded for each game and the series (handicap rules apply if enabled).
           </div>
           <div style={{fontSize:18, marginTop:8}}>
             <strong>Singles Points:</strong>{' '}
@@ -467,13 +491,16 @@ export default function EnterScores() {
           <div className="muted" style={{fontSize:12}}>
             Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}.
           </div>
+
+          {/* Total points */}
+          <div style={{fontSize:20, marginTop:10}}>
+            <strong>Total Points:</strong>{' '}
+            {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home} — {totalPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
+          </div>
         </div>
       </section>
-
-      <div style={{display:'flex', gap:8}}>
-        <button className="button" onClick={() => load()}>Load sheet</button>
-        <button className="button primary" onClick={save}>Save sheet</button>
-      </div>
     </div>
   )
 }
+
+
