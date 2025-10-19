@@ -4,38 +4,29 @@ import { NavLink } from 'react-router-dom'
 import { isAuthed } from '../lib/auth.js'
 
 export default function Nav({ authed = isAuthed() }) {
-  const link = (to, label) => (
+  const item = (to, label) => (
     <NavLink
       to={to}
-      style={({ isActive }) => ({
-        padding:'6px 10px',
-        borderRadius:8,
-        textDecoration:'none',
-        color:'var(--text)',
-        background:isActive ? 'var(--bg-soft)' : 'transparent',
-        border:'1px solid var(--border)'
-      })}
+      className={({ isActive }) => `button${isActive ? ' active' : ''}`}
     >
       {label}
     </NavLink>
   )
 
   return (
-    <nav style={{ display:'flex', gap:8 }}>
+    <nav className="nav" aria-label="Primary">
       {!authed ? (
         <>
-          {link('/', 'Home')}
+          {item('/', 'Home')}
         </>
       ) : (
         <>
-          {link('/standings', 'Standings')}
-          {link('/players', 'Players')}
-          {link('/teams', 'Teams')}
-          {link('/enter', 'Enter Scores')}
-          {link('/admin', 'Admin')}
-// inside the authed nav block:
-{link('/archive', 'Archive')}
-
+          {item('/standings', 'Standings')}
+          {item('/players', 'Players')}
+          {item('/teams', 'Teams')}
+          {item('/enter', <>Enter<br/>Scores</>)} {/* allow 2-line label */}
+          {item('/admin', 'Admin')}
+          {item('/archive', 'Archive')}
         </>
       )}
     </nav>
