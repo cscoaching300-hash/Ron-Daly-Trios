@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -131,6 +130,17 @@ function inFreeze(league, weekNumber) {
   return len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
 }
 
+/* ===== What week should we show if none specified? =====
+   Use the latest entered week (highest week_number present in saved sheets).
+   This keeps the freeze active until the configured number of *played* weeks is reached. */
+function latestEnteredWeek(leagueId) {
+  const weeks = (db.data.sheets || [])
+    .filter(s => s && s.league_id === leagueId)
+    .map(s => +s.week_number)
+    .filter(Number.isFinite);
+  return weeks.length ? Math.max(...weeks) : 0;
+}
+
 /* ===== Handicap/Stats utils ===== */
 function capHcp(leagueRaw, hcp, isJunior) {
   const league = normalizeLeague(leagueRaw);
@@ -140,7 +150,7 @@ function capHcp(leagueRaw, hcp, isJunior) {
 }
 
 function playerHandicapPerGame(leagueRaw, avg, storedHcp = null, isJunior = false) {
-  // Manual override: do NOT cap (as requested: cap applies to calculated handicap)
+  // Manual override: do NOT cap (cap applies only to calculated handicap)
   if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp;
   const league = normalizeLeague(leagueRaw);
   if (!league || league.mode === 'scratch') return 0;
@@ -537,8 +547,11 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  const displayWeek = req.query.week != null ? +req.query.week : 0;
-  const statsUpTo   = req.query.week != null ? +req.query.week : null;
+  // Default to latest entered week when none is specified to keep freeze consistent
+  const defaultWeek = latestEnteredWeek(leagueId);
+  const hasWeekParam = (req.query.week != null);
+  const displayWeek = hasWeekParam ? +req.query.week : defaultWeek;
+  const statsUpTo   = hasWeekParam ? +req.query.week : (defaultWeek > 0 ? defaultWeek : null);
 
   const leagueRaw  = (db.data.leagues || []).find(l => l.id === leagueId);
   const league = normalizeLeague(leagueRaw);
@@ -591,7 +604,7 @@ app.get('/api/matches', (req, res) => {
   res.json(rows);
 });
 
-/* ===== Match Sheet (now mirrors Players-page HCP outside freeze) ===== */
+/* ===== Match Sheet (mirrors Players-page HCP outside freeze) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
@@ -888,7 +901,9 @@ app.get('/api/standings/players', (req, res) => {
   try {
     db.read();
     const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
-    const upToWeek = req.query.week ? +req.query.week : null;
+
+    // Default cutoff/display week = latest entered week if not specified
+    const upToWeek = req.query.week ? +req.query.week : latestEnteredWeek(leagueId);
 
     const leagueRaw   = (db.data.leagues || []).find(l => l && l.id === leagueId);
     const league = normalizeLeague(leagueRaw);
@@ -1154,4 +1169,3 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
-
