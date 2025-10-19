@@ -491,22 +491,17 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   if (average != null) p.average = Math.floor(+average || 0);
   if (start_average != null) p.start_average = Math.floor(+start_average || 0);
 
-  // Manual handicap: update ONLY if the 'hcp' key is present and valid.
+    // Manual handicap: update ONLY if the 'hcp' key is present.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
-    if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
-      p.hcp = Math.max(0, +hcp); // manual remains uncapped by rule
-    }
-  }
 
-  if (gender === 'M' || 'F' || gender === null) p.gender = gender ?? null;
-
-  if (junior !== undefined) p.junior = !!junior;
-
-  if (teamId !== undefined) {
-    db.data.team_players = (db.data.team_players || [])
-      .filter(tp => !(tp.league_id === req.league.id && tp.player_id === id));
-    if (teamId) db.data.team_players.push({ league_id: req.league.id, team_id: +teamId, player_id: id });
-  }
+if (hcp === '' || hcp === null) {
+// Clear manual handicap so computed (or frozen) value is used
+p.hcp = null;
+} else if (Number.isFinite(+hcp)) {
+// Set a new manual handicap (uncapped by rule)
+p.hcp = Math.max(0, +hcp);
+ }
+}
 
   db.write();
   res.json(p);
