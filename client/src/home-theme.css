@@ -1,6 +1,28 @@
-/* ===== Premium Black/Red theme — scoped to .home-theme only ===== */
+/* ===== Premium Home (black/red) — scoped only to Home ===== */
+
+/* Full-viewport background that sits behind everything */
+.home-root {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Full-screen dark background layer */
+.home-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 600px at 10% -20%, rgba(225,29,46,0.10), transparent 50%),
+    radial-gradient(1000px 500px at 120% 0%, rgba(225,29,46,0.06), transparent 60%),
+    #0b0e14; /* near-black */
+}
+
+/* Hide any theme toggle only on Home */
+.home-root .theme-toggle { display: none !important; }
+
+/* Home-scoped tokens */
 .home-theme {
-  /* Local CSS variables for dark look */
   --bg: #0b0e14;
   --fg: #e6e8ef;
   --card: #101621;
@@ -8,23 +30,20 @@
   --border: #1c2332;
   --muted: #9aa3b2;
   --hover: #171e2b;
-  --primary: #e11d2e; /* CSCoaching red */
+  --primary: #e11d2e;    /* CSCoaching red */
   --ring: rgba(225,29,46,0.35);
 
-  /* Full-bleed dark background only on Home */
-  background:
-    radial-gradient(1200px 600px at 10% -20%, rgba(225,29,46,0.10), transparent 50%),
-    radial-gradient(1000px 500px at 120% 0%, rgba(225,29,46,0.06), transparent 60%),
-    var(--bg);
   color: var(--fg);
-
-  /* Give the page some breathing room */
-  padding: 16px;
-  min-height: calc(100vh - 32px);
-  box-sizing: border-box;
 }
 
-/* Cards inside home */
+/* Keep content nicely centered; background stays full-screen */
+.home-theme .container {
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+/* Glassy dark card */
 .home-theme .card {
   background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--card);
   border: 1px solid var(--border);
@@ -33,19 +52,18 @@
   box-shadow: 0 12px 30px rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.04) inset;
 }
 
-/* Muted text */
 .home-theme .muted { color: var(--muted); }
 
-/* Buttons inside home */
+/* Buttons */
 .home-theme .button,
-.home-theme button,
-.home-theme .btn {
+.home-theme .btn,
+.home-theme button {
   border: 1px solid var(--border);
   background: var(--card-2);
   color: var(--fg);
   border-radius: 12px;
   padding: 10px 14px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -62,14 +80,17 @@
   box-shadow: 0 14px 36px rgba(225,29,46,0.28);
 }
 .home-theme .button:hover,
-.home-theme .btn:hover { background: var(--hover); }
+.home-theme .btn:hover,
+.home-theme button:hover {
+  background: var(--hover);
+}
 .home-theme .button.primary:focus-visible,
 .home-theme .btn.primary:focus-visible {
   outline: 0;
   box-shadow: 0 0 0 3px var(--ring), 0 14px 36px rgba(225,29,46,0.28);
 }
 
-/* Inputs inside home */
+/* Inputs */
 .home-theme input,
 .home-theme select {
   background: #0d131d;
@@ -78,7 +99,6 @@
   border-radius: 10px;
   padding: 8px 10px;
   height: 36px;
-  box-shadow: none;
 }
 .home-theme input:focus,
 .home-theme select:focus {
@@ -87,13 +107,8 @@
   box-shadow: 0 0 0 3px var(--ring);
 }
 
-/* Tables if any */
-.home-theme table { width: 100%; border-collapse: collapse; }
-.home-theme th,
-.home-theme td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
-
-/* ===== Hero block, only on home ===== */
-.home-theme .home-hero {
+/* HERO */
+.home-hero {
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 28px 24px;
@@ -108,18 +123,22 @@
   grid-template-columns: 1.2fr 1fr;
   gap: 18px;
 }
-.home-theme .home-hero__logo {
+.home-hero__logo {
   width: 100%;
   display: block;
   border-radius: 14px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.45);
 }
-.home-theme .home-grid {
+
+/* Forms grid */
+.home-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
+
 @media (max-width: 980px) {
-  .home-theme .home-hero { grid-template-columns: 1fr; }
-  .home-theme .home-grid { grid-template-columns: 1fr; }
+  .home-hero { grid-template-columns: 1fr; }
+  .home-grid { grid-template-columns: 1fr; }
 }
+
