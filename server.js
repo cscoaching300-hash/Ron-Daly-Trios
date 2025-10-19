@@ -39,12 +39,18 @@ for (const k of Object.keys(defaultData)) {
   if (!Array.isArray(db.data[k])) db.data[k] = [];
 }
 
-/* ---- migration: ensure start_average on all players ---- */
+/* ---- migration: ensure start_average & junior on all players ---- */
 db.data.players = (db.data.players || []).map(p => {
   const hasStart = Number.isFinite(+p.start_average);
   const startAverage = hasStart ? +p.start_average : (Number.isFinite(+p.average) ? +p.average : 0);
-  return { ...p, start_average: startAverage };
+  return { ...p, start_average: startAverage, junior: !!p.junior };
 });
+/* ---- migration: ensure caps on leagues ---- */
+db.data.leagues = (db.data.leagues || []).map(l => ({
+  ...l,
+  handicapCapAdult: Number.isFinite(+l.handicapCapAdult) ? +l.handicapCapAdult : 0,
+  handicapCapJunior: Number.isFinite(+l.handicapCapJunior) ? +l.handicapCapJunior : 0,
+}));
 db.write();
 
 /* ===== Uploads (logos) ===== */
@@ -91,6 +97,10 @@ function normalizeLeague(league) {
   safe.handicapBase = baseNum > 0 ? baseNum : 200;
   safe.handicapPercent = pctNum > 0 ? pctNum : 90;
 
+  // Handicap caps (0 or null means "no cap")
+  safe.handicapCapAdult  = Number.isFinite(+safe.handicapCapAdult)  ? Math.max(0, +safe.handicapCapAdult)  : 0;
+  safe.handicapCapJunior = Number.isFinite(+safe.handicapCapJunior) ? Math.max(0, +safe.handicapCapJunior) : 0;
+
   // Games per week
   safe.gamesPerWeek = Number.isFinite(+safe.gamesPerWeek) && +safe.gamesPerWeek > 0 ? +safe.gamesPerWeek : 3;
 
@@ -122,18 +132,27 @@ function inFreeze(league, weekNumber) {
 }
 
 /* ===== Handicap/Stats utils ===== */
-function playerHandicapPerGame(leagueRaw, avg, storedHcp = null) {
-  if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp; // explicit override
+function capHcp(leagueRaw, hcp, isJunior) {
+  const league = normalizeLeague(leagueRaw);
+  const cap = isJunior ? +league.handicapCapJunior : +league.handicapCapAdult;
+  if (!cap || cap <= 0) return Math.max(0, Math.round(+hcp || 0));
+  return Math.min(cap, Math.max(0, Math.round(+hcp || 0)));
+}
+
+function playerHandicapPerGame(leagueRaw, avg, storedHcp = null, isJunior = false) {
+  // Manual override: do NOT cap (as requested: cap applies to calculated handicap)
+  if (Number.isFinite(+storedHcp) && +storedHcp >= 0) return +storedHcp;
   const league = normalizeLeague(leagueRaw);
   if (!league || league.mode === 'scratch') return 0;
   const base = league.handicapBase;
   const pct  = league.handicapPercent / 100;
-  return Math.max(0, Math.round((base - (+avg || 0)) * pct));
+  const calc = Math.max(0, Math.round((base - (+avg || 0)) * pct));
+  return capHcp(league, calc, isJunior);
 }
 function manualOrStartHcp(league, player) {
-  if (Number.isFinite(+player.hcp) && +player.hcp >= 0) return +player.hcp;
+  if (Number.isFinite(+player.hcp) && +player.hcp >= 0) return +player.hcp; // manual stays as-is, no cap
   const startAve = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
-  return playerHandicapPerGame(league, startAve, null);
+  return playerHandicapPerGame(league, startAve, null, !!player.junior);
 }
 function teamHandicapPerGame(leagueRaw, teamId) {
   const league = normalizeLeague(leagueRaw);
@@ -143,7 +162,10 @@ function teamHandicapPerGame(leagueRaw, teamId) {
     .map(tp => (db.data.players || []).find(p => p.id === tp.player_id))
     .filter(Boolean);
   let perGame = 0;
-  for (const b of roster) perGame += Math.max(0, league.handicapBase - (+b.average || 0)) * (league.handicapPercent / 100);
+  for (const b of roster) {
+    const raw = Math.max(0, league.handicapBase - (+b.average || 0)) * (league.handicapPercent / 100);
+    perGame += capHcp(league, raw, !!b.junior);
+  }
   return Math.round(perGame);
 }
 function seriesForMatch(leagueRaw, match, sideTeamId) {
@@ -175,16 +197,9 @@ function rowHandicapSeries(leagueRaw, r){
 
 /* ===== Blind-aware scoring helper ===== */
 function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
-  // both blind => no points
   if (aBlind && bBlind) return [0, 0];
-
-  // A blind => A never scores; B only if strictly greater
   if (aBlind && !bBlind) return (bVal > aVal) ? [0, winPts] : [0, 0];
-
-  // B blind => B never scores; A only if strictly greater
   if (!aBlind && bBlind) return (aVal > bVal) ? [winPts, 0] : [0, 0];
-
-  // neither blind => normal outcome
   if (aVal === bVal) return [drawPts, drawPts];
   return (aVal > bVal) ? [winPts, 0] : [0, winPts];
 }
@@ -215,7 +230,6 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
         const aVal = ra ? cmpVal(league, ra[gKey], ra?.hcp) : null;
         const bVal = rb ? cmpVal(league, rb[gKey], rb?.hcp) : null;
 
-        // count games/pins/highs ONLY if not blind
         if (ra && !ra.blind && num(ra[gKey]) > 0) {
           const aS = ensure(+ra.playerId);
           aS.gms += 1;
@@ -233,7 +247,6 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
           bS.hgh = Math.max(bS.hgh, num(rb[gKey]) + (league.mode === 'scratch' ? 0 : num(rb.hcp)));
         }
 
-        // blind-aware singles points (blind can block points but never gains them)
         if (ra && rb && num(aVal) > 0 && num(bVal) > 0) {
           const aBlind = !!ra.blind;
           const bBlind = !!rb.blind;
@@ -252,7 +265,6 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
         }
       }
 
-      // series/high series updated only for non-blind rows
       if (ra && !ra.blind) {
         const aS = ensure(+ra.playerId);
         aS.hss = Math.max(aS.hss, rowScratchSeries(ra));
@@ -266,24 +278,24 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
     }
   }
 
-  // Averages: no decimals, always rounded down
   for (const s of stats.values()) s.ave = s.gms ? Math.floor(s.pinss / s.gms) : 0;
   return stats;
 }
 
-/* Display HCP after freeze */
-function hcpDisplayFromEffectiveAverage(league, effectiveAvg) {
+/* Display HCP after freeze (with caps) */
+function hcpDisplayFromEffectiveAverage(league, effectiveAvg, isJunior=false) {
   if (!league || league.mode === 'scratch') return 0;
   const base = +league.handicapBase || 200;
   const pct  = (+league.handicapPercent || 0) / 100;
-  return Math.max(0, Math.round((base - (+effectiveAvg || 0)) * pct));
+  const calc = Math.max(0, Math.round((base - (+effectiveAvg || 0)) * pct));
+  return capHcp(league, calc, !!isJunior);
 }
 
 /* Single source of truth for display (Players, Standings, Enter Scores) */
 function hcpDisplayForList(league, displayWeek, player, effectiveAvg) {
   if (inFreeze(league, displayWeek)) return manualOrStartHcp(league, player);
   if (Number.isFinite(+effectiveAvg) && +effectiveAvg > 0) {
-    return hcpDisplayFromEffectiveAverage(league, +effectiveAvg);
+    return hcpDisplayFromEffectiveAverage(league, +effectiveAvg, !!player.junior);
   }
   return manualOrStartHcp(league, player);
 }
@@ -345,6 +357,9 @@ app.post('/api/leagues', (req, res) => {
     mode = 'handicap',
     hcpLockWeeks = 0,
     hcpLockFromWeek = 0,
+    // NEW caps
+    handicapCapAdult = 0,
+    handicapCapJunior = 0,
     pin
   } = req.body || {};
 
@@ -367,6 +382,8 @@ app.post('/api/leagues', (req, res) => {
     mode: mode === 'scratch' ? 'scratch' : 'handicap',
     hcpLockWeeks: +hcpLockWeeks || 0,
     hcpLockFromWeek: +hcpLockFromWeek || 0,
+    handicapCapAdult: Math.max(0, +handicapCapAdult || 0),
+    handicapCapJunior: Math.max(0, +handicapCapJunior || 0),
     pin: String(pin),
     logo: null,
     created_at: new Date().toISOString()
@@ -399,6 +416,10 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
   if (up.hcpLockWeeks !== undefined) league.hcpLockWeeks = numOr(up.hcpLockWeeks, 0);
   if (up.hcpLockFromWeek !== undefined) league.hcpLockFromWeek = numOr(up.hcpLockFromWeek, 0);
 
+  // NEW: caps
+  if (up.handicapCapAdult !== undefined)  league.handicapCapAdult  = Math.max(0, +up.handicapCapAdult || 0);
+  if (up.handicapCapJunior !== undefined) league.handicapCapJunior = Math.max(0, +up.handicapCapJunior || 0);
+
   db.write();
   res.json({ ok: true, league: normalizeLeague(league) });
 });
@@ -412,15 +433,15 @@ app.get('/api/players', (req, res) => {
     .sort((a,b)=> a.name.localeCompare(b.name)));
 });
 
-// CREATE PLAYER (floor averages)
+// CREATE PLAYER (floor averages + junior toggle)
 app.post('/api/players', requireAuth, (req, res) => {
   db.read();
   const league = normalizeLeague(req.league);
-  const { name, average = 0, hcp = null, gender = null, teamId = null } = req.body || {};
+  const { name, average = 0, hcp = null, gender = null, teamId = null, junior = false } = req.body || {};
   if (!name) return res.status(400).json({ error: 'name required' });
 
   const startAve   = Math.floor(+average || 0);
-  const initialHcp = Number.isFinite(+hcp) ? +hcp : playerHandicapPerGame(league, startAve, null);
+  const initialHcp = Number.isFinite(+hcp) ? +hcp : playerHandicapPerGame(league, startAve, null, !!junior);
 
   const row = {
     id: nextId('players'),
@@ -430,6 +451,7 @@ app.post('/api/players', requireAuth, (req, res) => {
     start_average: startAve,
     hcp: initialHcp,
     gender: (gender === 'M' || gender === 'F') ? gender : null,
+    junior: !!junior,
     created_at: new Date().toISOString()
   };
   db.data.players.push(row);
@@ -443,11 +465,11 @@ app.post('/api/players', requireAuth, (req, res) => {
   res.json(row);
 });
 
-// UPDATE PLAYER (manual handicap unchanged unless explicitly set; floor averages)
+// UPDATE PLAYER (manual handicap unchanged unless explicitly set; floor averages; junior toggle)
 app.put('/api/players/:id', requireAuth, (req, res) => {
   db.read();
   const id = +req.params.id;
-  const { name, average, hcp, gender, teamId, start_average } = req.body || {};
+  const { name, average, hcp, gender, teamId, start_average, junior } = req.body || {};
 
   const p = (db.data.players || []).find(x => x.id === id && x.league_id === req.league.id);
   if (!p) return res.status(404).json({ error: 'player not found' });
@@ -459,11 +481,13 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   // Manual handicap: update ONLY if the 'hcp' key is present and valid.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp !== '' && hcp !== null && Number.isFinite(+hcp)) {
-      p.hcp = Math.max(0, +hcp);
+      p.hcp = Math.max(0, +hcp); // manual remains uncapped by rule
     }
   }
 
   if (gender === 'M' || 'F' || gender === null) p.gender = gender ?? null;
+
+  if (junior !== undefined) p.junior = !!junior;
 
   if (teamId !== undefined) {
     db.data.team_players = (db.data.team_players || [])
@@ -513,7 +537,6 @@ app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  // displayWeek decides freeze; statsUpTo controls aggregation (null = all weeks)
   const displayWeek = req.query.week != null ? +req.query.week : 0;
   const statsUpTo   = req.query.week != null ? +req.query.week : null;
 
@@ -539,6 +562,7 @@ app.get('/api/players-with-teams', (req, res) => {
       id: p.id,
       name: p.name,
       gender: p.gender || null,
+      junior: !!p.junior,
       hcp: showHcp,
       team_id,
       team_name: team_id ? (teamById.get(team_id)?.name || 'Team') : '— Sub / Free Agent —',
@@ -580,7 +604,6 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
-  // Align stats/effectiveAvg with Players page for the chosen week
   const statsForWeek = computePlayerStatsForLeague(league, weekNumber);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
@@ -602,7 +625,8 @@ app.get('/api/match-sheet', (req, res) => {
       name: p.name,
       average: effAvg,
       gender: p.gender || null,
-      hcp: hcpDisplayForList(league, weekNumber, p, effAvg) // <- identical to Players page
+      junior: !!p.junior,
+      hcp: hcpDisplayForList(league, weekNumber, p, effAvg)
     };
   };
 
@@ -627,6 +651,8 @@ app.get('/api/match-sheet', (req, res) => {
       mode: league.mode,
       hcpLockWeeks: league.hcpLockWeeks,
       hcpLockFromWeek: league.hcpLockFromWeek,
+      handicapCapAdult: league.handicapCapAdult,
+      handicapCapJunior: league.handicapCapJunior,
     },
     weekNumber,
     homeTeam: home ? { id: home.id, name: home.name } : null,
@@ -702,7 +728,6 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     match.home_points = rpHome;
     match.away_points = rpAway;
   } else {
-    // Fallback: compute team points per game + series (hcp if handicap mode) + singles points
     const W = num(league.teamPointsWin);
     const D = num(league.teamPointsDraw);
     const useHandicap = league.mode === 'handicap';
@@ -826,7 +851,7 @@ app.get('/api/standings', (req, res) => {
 
       for (const m of played) {
         const totals = sheetTotalsForMatch(league, m);
-        if (!totals) continue;                // skip matches without a sheet
+        if (!totals) continue; // skip matches without a sheet
 
         matchesWithSheet += 1;
 
@@ -842,7 +867,6 @@ app.get('/api/standings', (req, res) => {
         hss = Math.max(hss, isHome ? totals.homeHss : totals.awayHss);
         hsh = Math.max(hsh, isHome ? totals.homeHsh : totals.awayHsh);
 
-        // Points come directly from match (these are the "Total Points" from Enter Scores)
         won += (m.home_team_id === t.id ? num(m.home_points) : num(m.away_points));
       }
 
@@ -911,8 +935,6 @@ app.get('/api/standings/players', (req, res) => {
 });
 
 /* ===== Weeks: entered-only helpers ===== */
-
-// Distinct weeks that have at least one saved sheet (i.e., entered weeks)
 app.get('/api/weeks/entered', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
@@ -920,10 +942,8 @@ app.get('/api/weeks/entered', (req, res) => {
   const allWeeks  = (db.data.weeks  || []).filter(w => w.league_id === leagueId);
   const allSheets = (db.data.sheets || []).filter(s => s.league_id === leagueId);
 
-  // Unique week_numbers present in sheets
   const enteredWeekNumbers = Array.from(new Set(allSheets.map(s => s.week_number))).sort((a,b) => a - b);
 
-  // Map weeks by week_number to fetch dates (if weeks were created with dates)
   const byWeekNumber = new Map(allWeeks.map(w => [w.week_number, w]));
 
   const result = enteredWeekNumbers.map(wn => ({
@@ -1080,7 +1100,6 @@ app.delete('/api/sheet', requireAuth, (req, res) => {
 });
 
 /* ===== Auth (login) ===== */
-// POST is preferred for the app
 app.post('/api/login', (req, res) => {
   db.read();
   const { leagueId, pin } = req.body || {};
@@ -1105,6 +1124,8 @@ app.post('/api/login', (req, res) => {
       indivPointsDraw: league.indivPointsDraw,
       handicapBase: league.handicapBase,
       handicapPercent: league.handicapPercent,
+      handicapCapAdult: league.handicapCapAdult,
+      handicapCapJunior: league.handicapCapJunior,
       hcpLockWeeks: league.hcpLockWeeks,
       hcpLockFromWeek: league.hcpLockFromWeek,
       logo: league.logo ?? null,
@@ -1112,7 +1133,6 @@ app.post('/api/login', (req, res) => {
   });
 });
 
-// Optional GET for quick manual testing
 app.get('/api/login', (req, res) => {
   db.read();
   const id = Number(req.query.leagueId);
