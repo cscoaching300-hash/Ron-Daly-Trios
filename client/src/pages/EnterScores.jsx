@@ -44,14 +44,14 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
       <optgroup label="Team">
         {(teamOptions || []).map(p => (
           <option key={`t-${p.id}`} value={p.id} disabled={disabledIds.has(p.id)}>
-            {p.name} {p.hcp ? `(${p.hcp})` : ''}
+            {p.name}{p.junior ? ' (Jr)' : ''} {p.hcp ? `(${p.hcp})` : ''}
           </option>
         ))}
       </optgroup>
       <optgroup label="Substitutes">
         {(subOptions || []).map(p => (
           <option key={`s-${p.id}`} value={p.id} disabled={disabledIds.has(p.id)}>
-            {p.name} {p.hcp ? `(${p.hcp})` : ''}
+            {p.name}{p.junior ? ' (Jr)' : ''} {p.hcp ? `(${p.hcp})` : ''}
           </option>
         ))}
       </optgroup>
@@ -163,13 +163,14 @@ function TeamTable({
   const removeRow = (idx) => setValues(v => v.filter((_,i)=>i!==idx))
 
   return (
-    <section className="card" style={{flex: 1, minWidth: 640}}>
+    <section className="card" style={{flex: 1, minWidth: 720}}>
       <h3 style={{marginTop:0, textAlign:'center'}}>{title}</h3>
       <div style={{overflowX:'auto'}}>
         <table style={{width:'100%', borderCollapse:'collapse'}}>
           <thead>
             <tr>
               <th style={th}>Player</th>
+              <th style={th}>Jr</th>{/* NEW */}
               <th style={th}>Blind</th>
               <th style={th}>Hcp</th>
               <th style={th}>G1</th>
@@ -184,105 +185,111 @@ function TeamTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, idx) => (
-              <tr key={idx}>
-                <td style={td}>
-                  <PlayerSelect
-                    value={r.playerId}
-                    onChange={(id) => {
-                      setValues(list => list.map((x,i)=>{
-                        if (i !== idx) return x
-                        const picked = byId.get(String(id))
-                        // If blind is already toggled, keep it and re-apply blind logic with new player
-                        const baseHcp = picked ? (num(picked.hcp) || 0) : 0
-                        const baseAvg = picked ? (num(picked.average) || 0) : 0
-                        if (x.blind) {
-                          const blindH = Math.floor(baseHcp * 0.9)
-                          const blindG = Math.floor(baseAvg * 0.9)
-                          return {
-                            ...x,
-                            playerId: id,
-                            hcp: blindH,
-                            g1: String(blindG),
-                            g2: String(blindG),
-                            g3: String(blindG),
-                          }
-                        }
-                        return {
-                          ...x,
-                          playerId: id,
-                          hcp: baseHcp
-                        }
-                      }))
-                    }}
-                    teamOptions={teamOptions || []}
-                    subOptions={subOptions || []}
-                    disabledIds={new Set([...usedIds].filter(id => String(id)!==String(r.playerId)))}
-                  />
-                </td>
-
-                {/* Blind toggle */}
-                <td style={td}>
-                  <label style={{display:'inline-flex', alignItems:'center', gap:6}}>
-                    <input
-                      type="checkbox"
-                      checked={!!r.blind}
-                      onChange={e=>{
-                        const checked = e.target.checked
+            {rows.map((r, idx) => {
+              const picked = byId.get(String(r.playerId))
+              const isJunior = !!picked?.junior
+              return (
+                <tr key={idx}>
+                  <td style={td}>
+                    <PlayerSelect
+                      value={r.playerId}
+                      onChange={(id) => {
                         setValues(list => list.map((x,i)=>{
                           if (i !== idx) return x
-                          const picked = byId.get(String(x.playerId))
-                          const baseHcp = picked ? (num(picked.hcp) || 0) : num(x.hcp)
+                          const picked = byId.get(String(id))
+                          const baseHcp = picked ? (num(picked.hcp) || 0) : 0
                           const baseAvg = picked ? (num(picked.average) || 0) : 0
-                          if (checked) {
+                          if (x.blind) {
                             const blindH = Math.floor(baseHcp * 0.9)
                             const blindG = Math.floor(baseAvg * 0.9)
                             return {
                               ...x,
-                              blind: true,
+                              playerId: id,
                               hcp: blindH,
                               g1: String(blindG),
                               g2: String(blindG),
                               g3: String(blindG),
                             }
-                          } else {
-                            // Revert HCP to the player's normal value if known; keep entered scores as-is
-                            const normH = picked ? (num(picked.hcp) || 0) : num(x.hcp)
-                            return { ...x, blind:false, hcp: normH }
+                          }
+                          return {
+                            ...x,
+                            playerId: id,
+                            hcp: baseHcp
                           }
                         }))
                       }}
-                    />
-                  </label>
-                </td>
-
-                <td style={td}>{r.hcp}</td>
-
-                {['g1','g2','g3'].map(k=>(
-                  <td key={k} style={td}>
-                    <input
-                      inputMode="numeric"
-                      type="text"
-                      style={{width:64, textAlign:'center'}}
-                      value={r[k]}
-                      onChange={e=>{
-                        const v = e.target.value.replace(/\D/g,'')
-                        setValues(list => list.map((x,i)=> i===idx ? {...x,[k]:v} : x))
-                      }}
-                      disabled={!!r.blind} // blind rows auto-filled & locked
+                      teamOptions={teamOptions || []}
+                      subOptions={subOptions || []}
+                      disabledIds={new Set([...usedIds].filter(id => String(id)!==String(r.playerId)))}
                     />
                   </td>
-                ))}
-                <td style={td}>{r.g1h}</td>
-                <td style={td}>{r.g2h}</td>
-                <td style={td}>{r.g3h}</td>
-                <td style={td}>{r.series}</td>
-                <td style={{...td, fontWeight: 700}}>{singlesPts[idx] || 0}</td>
-                <td style={td}>
-                  <button className="button" onClick={()=>removeRow(idx)}>✖</button>
-                </td>
-              </tr>
-            ))}
+
+                  {/* NEW: Jr indicator (read-only) */}
+                  <td style={td}>{isJunior ? 'Yes' : ''}</td>
+
+                  {/* Blind toggle */}
+                  <td style={td}>
+                    <label style={{display:'inline-flex', alignItems:'center', gap:6}}>
+                      <input
+                        type="checkbox"
+                        checked={!!r.blind}
+                        onChange={e=>{
+                          const checked = e.target.checked
+                          setValues(list => list.map((x,i)=>{
+                            if (i !== idx) return x
+                            const picked = byId.get(String(x.playerId))
+                            const baseHcp = picked ? (num(picked.hcp) || 0) : num(x.hcp)
+                            const baseAvg = picked ? (num(picked.average) || 0) : 0
+                            if (checked) {
+                              const blindH = Math.floor(baseHcp * 0.9)
+                              const blindG = Math.floor(baseAvg * 0.9)
+                              return {
+                                ...x,
+                                blind: true,
+                                hcp: blindH,
+                                g1: String(blindG),
+                                g2: String(blindG),
+                                g3: String(blindG),
+                              }
+                            } else {
+                              // Revert HCP to the player's normal value if known; keep entered scores as-is
+                              const normH = picked ? (num(picked.hcp) || 0) : num(x.hcp)
+                              return { ...x, blind:false, hcp: normH }
+                            }
+                          }))
+                        }}
+                      />
+                    </label>
+                  </td>
+
+                  <td style={td}>{r.hcp}</td>
+
+                  {['g1','g2','g3'].map(k=>(
+                    <td key={k} style={td}>
+                      <input
+                        inputMode="numeric"
+                        type="text"
+                        style={{width:64, textAlign:'center'}}
+                        value={r[k]}
+                        onChange={e=>{
+                          const v = e.target.value.replace(/\D/g,'')
+                          setValues(list => list.map((x,i)=> i===idx ? {...x,[k]:v} : x))
+                        }}
+                        disabled={!!r.blind} // blind rows auto-filled & locked
+                      />
+                    </td>
+                  ))}
+                  <td style={td}>{r.g1h}</td>
+                  <td style={td}>{r.g2h}</td>
+                  <td style={td}>{r.g3h}</td>
+                  <td style={td}>{r.series}</td>
+                  <td style={{...td, fontWeight: 700}}>{singlesPts[idx] || 0}</td>
+                  <td style={td}>
+                    <button className="button" onClick={()=>removeRow(idx)}>✖</button>
+                  </td>
+                </tr>
+              )
+            })}
 
             {/* Totals row */}
             <tr>

@@ -31,6 +31,9 @@ export default function Admin() {
     indivPointsDraw:0,
     hcpLockFromWeek:1,
     hcpLockWeeks:0,
+    // NEW: caps
+    handicapCapAdult: 0,
+    handicapCapJunior: 0,
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -69,6 +72,9 @@ export default function Admin() {
               indivPointsDraw: current.indivPointsDraw ?? 0,
               hcpLockFromWeek: current.hcpLockFromWeek ?? 1,
               hcpLockWeeks: current.hcpLockWeeks ?? 0,
+              // NEW: bring caps in if present, default 0 (no cap)
+              handicapCapAdult: current.handicapCapAdult ?? 0,
+              handicapCapJunior: current.handicapCapJunior ?? 0,
             })
           }
         }
@@ -116,7 +122,22 @@ export default function Admin() {
       const r = await fetch(`/api/leagues/${league.id}`, {
         method:'PUT',
         headers: { 'Content-Type':'application/json', ...getAuthHeaders() },
-        body: JSON.stringify(form)
+        body: JSON.stringify({
+          ...form,
+          // ensure numbers
+          gamesPerWeek: Number(form.gamesPerWeek) || 0,
+          handicapBase: Number(form.handicapBase) || 0,
+          handicapPercent: Number(form.handicapPercent) || 0,
+          teamPointsWin: Number(form.teamPointsWin) || 0,
+          teamPointsDraw: Number(form.teamPointsDraw) || 0,
+          indivPointsWin: Number(form.indivPointsWin) || 0,
+          indivPointsDraw: Number(form.indivPointsDraw) || 0,
+          hcpLockFromWeek: Number(form.hcpLockFromWeek) || 0,
+          hcpLockWeeks: Number(form.hcpLockWeeks) || 0,
+          // NEW: send caps
+          handicapCapAdult: Number(form.handicapCapAdult) || 0,
+          handicapCapJunior: Number(form.handicapCapJunior) || 0,
+        })
       })
       const data = await r.json()
       if (!r.ok || data?.error) throw new Error(data?.error || 'Save failed')
@@ -218,6 +239,31 @@ export default function Admin() {
                 <div style={row}>
                   <div style={label}>Freeze (weeks)</div>
                   <input inputMode="numeric" value={form.hcpLockWeeks} onChange={onNum('hcpLockWeeks')} />
+                </div>
+
+                {/* NEW: Handicap Caps */}
+                <div style={row}>
+                  <div style={label}>Adult Handicap Cap</div>
+                  <div>
+                    <input
+                      inputMode="numeric"
+                      value={form.handicapCapAdult}
+                      onChange={onNum('handicapCapAdult')}
+                    />
+                    <div style={small}>0 = no cap. Applies to non-juniors.</div>
+                  </div>
+                </div>
+
+                <div style={row}>
+                  <div style={label}>Junior Handicap Cap</div>
+                  <div>
+                    <input
+                      inputMode="numeric"
+                      value={form.handicapCapJunior}
+                      onChange={onNum('handicapCapJunior')}
+                    />
+                    <div style={small}>0 = no cap. Applies only to players marked as juniors.</div>
+                  </div>
                 </div>
               </>
             )}

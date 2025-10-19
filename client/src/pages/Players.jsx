@@ -30,6 +30,8 @@ function PlayerForm({ teams, initial, onCancel, onSave, saving }) {
   const [teamId, setTeamId] = useState(
     initial?.team_id != null ? String(initial.team_id || '') : ''
   )
+  // NEW: Junior toggle
+  const [junior, setJunior] = useState(!!initial?.junior)
 
   const cleanNumber = (s) => (s === '' || s == null ? '' : String(s).replace(/[^\d.]/g, ''))
 
@@ -75,6 +77,16 @@ function PlayerForm({ teams, initial, onCancel, onSave, saving }) {
             <option value="F">F</option>
           </select>
         </label>
+
+        {/* NEW: Junior toggle */}
+        <label style={{ display:'flex', alignItems:'center', gap:8, marginTop: 6 }}>
+          <input
+            type="checkbox"
+            checked={junior}
+            onChange={e => setJunior(e.target.checked)}
+          />
+          <span>Junior</span>
+        </label>
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -88,6 +100,7 @@ function PlayerForm({ teams, initial, onCancel, onSave, saving }) {
               hcp: hcp === '' ? null : +hcp,
               gender: gender || null,
               teamId: teamId ? +teamId : null,
+              junior: !!junior, // NEW
             })
           }
         >
@@ -158,7 +171,7 @@ export default function Players() {
   const handleAdd = async (payload) => {
     try {
       setSaving(true)
-      await addPlayer(payload) // { name, average, hcp, gender, teamId }
+      await addPlayer(payload) // { name, average, hcp, gender, teamId, junior }
       setAdding(false)
       await load()
     } catch (e) {
@@ -171,7 +184,7 @@ export default function Players() {
   const handleUpdate = async (id, payload) => {
     try {
       setSaving(true)
-      await updatePlayer(id, payload)
+      await updatePlayer(id, payload) // includes junior when present
       setEditingId(null)
       await load()
     } catch (e) {
@@ -230,6 +243,7 @@ export default function Players() {
                   <tr>
                     <th style={th}>Player</th>
                     <th style={th}>Team</th>
+                    <th style={th}>Jr</th>{/* NEW */}
                     <th style={th}>Hcp</th>
                     <th style={th}>Gms</th>
                     <th style={th}>Pts</th>
@@ -247,9 +261,14 @@ export default function Players() {
                   {players.map(p => {
                     const isEditing = editingId === p.id
                     const stored = rawById.get(+p.id) || null
+                    // prefer raw stored junior flag; fallback to computed rows (if ever present)
+                    const isJuniorStored = !!(stored?.junior)
+                    const isJuniorRow = !!(p?.junior)
+                    const isJunior = isJuniorStored || isJuniorRow
+
                     return (
                       <tr key={p.id}>
-                        <td style={td} colSpan={isEditing ? 12 : 0}>
+                        <td style={td} colSpan={isEditing ? 13 : 0}>
                           {isEditing ? (
                             <PlayerForm
                               teams={teams}
@@ -267,6 +286,7 @@ export default function Players() {
                                 hcpStored: stored?.hcp ?? null,
                                 hcp: p.hcp ?? null,
                                 ave: p.ave ?? null,
+                                junior: isJunior, // NEW
                               }}
                               onCancel={() => setEditingId(null)}
                               onSave={(payload) => handleUpdate(p.id, payload)}
@@ -282,6 +302,7 @@ export default function Players() {
                         {!isEditing && (
                           <>
                             <td style={td}>{p.team_name}</td>
+                            <td style={td}>{isJunior ? 'Yes' : ''}</td>{/* NEW */}
                             <td style={td}>{p.hcp ?? 0}</td>
                             <td style={td}>{p.gms ?? 0}</td>
                             <td style={td}>{p.pts ?? 0}</td>
@@ -320,5 +341,3 @@ export default function Players() {
     </div>
   )
 }
-
-
