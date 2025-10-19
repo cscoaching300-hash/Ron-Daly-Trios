@@ -17,22 +17,9 @@ const num = v => (isFinite(+v) ? +v : 0)
    - If neither is blind: normal win/draw.
 */
 function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
-  // both blind => no one gets points
   if (aBlind && bBlind) return [0, 0]
-
-  // A is blind: A never scores; B only scores if strictly greater
-  if (aBlind && !bBlind) {
-    if (bVal > aVal) return [0, winPts]
-    return [0, 0]
-  }
-
-  // B is blind: B never scores; A only scores if strictly greater
-  if (!aBlind && bBlind) {
-    if (aVal > bVal) return [winPts, 0]
-    return [0, 0]
-  }
-
-  // No blinds: normal outcome
+  if (aBlind && !bBlind) return bVal > aVal ? [0, winPts] : [0, 0]
+  if (!aBlind && bBlind) return aVal > bVal ? [winPts, 0] : [0, 0]
   if (aVal === bVal) return [drawPts, drawPts]
   return aVal > bVal ? [winPts, 0] : [0, winPts]
 }
@@ -77,7 +64,6 @@ function TeamTable({
   teamDraw,
   useHandicap
 }) {
-  // ensure at least 3 slots on first mount for this table
   useEffect(() => {
     if (!values.length) {
       setValues([
@@ -100,7 +86,6 @@ function TeamTable({
     [values]
   )
 
-  // processed rows with computed fields
   const rows = values.map(v => {
     const s1 = num(v.g1), s2 = num(v.g2), s3 = num(v.g3)
     const h  = num(v.hcp)
@@ -112,7 +97,6 @@ function TeamTable({
     }
   })
 
-  // singles points per bowler vs opposite index on opponent (blind-aware)
   const singlesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
@@ -130,7 +114,6 @@ function TeamTable({
 
   const singlesTotal = singlesPts.reduce((s,v)=>s+v,0)
 
-  // Opponent totals (scratch & with handicap)
   const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
   }), { g1:0, g2:0, g3:0 })
@@ -139,7 +122,6 @@ function TeamTable({
     g1h: a.g1h + num(r.g1h), g2h: a.g2h + num(r.g2h), g3h: a.g3h + num(r.g3h)
   }), { g1h:0, g2h:0, g3h:0 })
 
-  // Team game points per game + series
   const g1Us   = useHandicap ? totals.g1h : totals.g1
   const g2Us   = useHandicap ? totals.g2h : totals.g2
   const g3Us   = useHandicap ? totals.g3h : totals.g3
@@ -147,7 +129,7 @@ function TeamTable({
   const g2Them = useHandicap ? oppHcpTotals.g2h : oppScratchTotals.g2
   const g3Them = useHandicap ? oppHcpTotals.g3h : oppScratchTotals.g3
 
-  const [g1Pts] = blindAwareOutcome(g1Us, g1Them, false, false, teamWin, teamDraw) // team outcomes ignore blind; already baked into totals
+  const [g1Pts] = blindAwareOutcome(g1Us, g1Them, false, false, teamWin, teamDraw)
   const [g2Pts] = blindAwareOutcome(g2Us, g2Them, false, false, teamWin, teamDraw)
   const [g3Pts] = blindAwareOutcome(g3Us, g3Them, false, false, teamWin, teamDraw)
 
@@ -170,7 +152,7 @@ function TeamTable({
           <thead>
             <tr>
               <th style={th}>Player</th>
-              <th style={th}>Jr</th>{/* NEW */}
+              <th style={th}>Jr</th>
               <th style={th}>Blind</th>
               <th style={th}>Hcp</th>
               <th style={th}>G1</th>
@@ -202,20 +184,9 @@ function TeamTable({
                           if (x.blind) {
                             const blindH = Math.floor(baseHcp * 0.9)
                             const blindG = Math.floor(baseAvg * 0.9)
-                            return {
-                              ...x,
-                              playerId: id,
-                              hcp: blindH,
-                              g1: String(blindG),
-                              g2: String(blindG),
-                              g3: String(blindG),
-                            }
+                            return { ...x, playerId:id, hcp:blindH, g1:String(blindG), g2:String(blindG), g3:String(blindG) }
                           }
-                          return {
-                            ...x,
-                            playerId: id,
-                            hcp: baseHcp
-                          }
+                          return { ...x, playerId:id, hcp:baseHcp }
                         }))
                       }}
                       teamOptions={teamOptions || []}
@@ -224,10 +195,8 @@ function TeamTable({
                     />
                   </td>
 
-                  {/* NEW: Jr indicator (read-only) */}
                   <td style={td}>{isJunior ? 'Yes' : ''}</td>
 
-                  {/* Blind toggle */}
                   <td style={td}>
                     <label style={{display:'inline-flex', alignItems:'center', gap:6}}>
                       <input
@@ -243,18 +212,10 @@ function TeamTable({
                             if (checked) {
                               const blindH = Math.floor(baseHcp * 0.9)
                               const blindG = Math.floor(baseAvg * 0.9)
-                              return {
-                                ...x,
-                                blind: true,
-                                hcp: blindH,
-                                g1: String(blindG),
-                                g2: String(blindG),
-                                g3: String(blindG),
-                              }
+                              return { ...x, blind:true, hcp:blindH, g1:String(blindG), g2:String(blindG), g3:String(blindG) }
                             } else {
-                              // Revert HCP to the player's normal value if known; keep entered scores as-is
                               const normH = picked ? (num(picked.hcp) || 0) : num(x.hcp)
-                              return { ...x, blind:false, hcp: normH }
+                              return { ...x, blind:false, hcp:normH }
                             }
                           }))
                         }}
@@ -275,7 +236,7 @@ function TeamTable({
                           const v = e.target.value.replace(/\D/g,'')
                           setValues(list => list.map((x,i)=> i===idx ? {...x,[k]:v} : x))
                         }}
-                        disabled={!!r.blind} // blind rows auto-filled & locked
+                        disabled={!!r.blind}
                       />
                     </td>
                   ))}
@@ -291,7 +252,6 @@ function TeamTable({
               )
             })}
 
-            {/* Totals row */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
               <td style={td}>—</td>
@@ -307,7 +267,6 @@ function TeamTable({
               <td style={td}>—</td>
             </tr>
 
-            {/* Team points row (per game + series) */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Points</td>
               <td style={td}>—</td>
@@ -345,10 +304,8 @@ export default function EnterScores() {
   const location = useLocation()
   const [params] = useSearchParams()
 
-  // Load teams once
   useEffect(() => { getTeams().then(setTeams) }, [])
 
-  // Sync state with URL params (?week=&homeTeamId=&awayTeamId=)
   useEffect(() => {
     const pWeek = params.get('week')
     const pHome = params.get('homeTeamId') || params.get('teamA')
@@ -358,10 +315,8 @@ export default function EnterScores() {
     if (pHome) setHomeId(pHome)
     if (pAway) setAwayId(pAway)
 
-    // if all present, auto-load
     if (pWeek && pHome && pAway) {
       load(+pWeek, +pHome, +pAway)
-      // try to fetch saved sheet and prefill
       const qs = new URLSearchParams({ weekNumber: pWeek, homeTeamId: pHome, awayTeamId: pAway }).toString()
       fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
         .then(r => (r.ok ? r.json() : null))
@@ -373,7 +328,7 @@ export default function EnterScores() {
             g2: String(r.g2 || ''),
             g3: String(r.g3 || ''),
             hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
-            blind: !!r.blind // future-proof; will be undefined for older saves
+            blind: !!r.blind
           })
           setHomeVals((s.homeGames || []).map(shape))
           setAwayVals((s.awayGames || []).map(shape))
@@ -410,7 +365,6 @@ export default function EnterScores() {
   const teamDraw = +sheet?.league?.teamPointsDraw || 0
   const useHandicap = (sheet?.league?.mode === 'handicap')
 
-  // processed rows for H2H comparison
   const process = rows => rows.map(v => {
     const s1 = num(v.g1), s2 = num(v.g2), s3 = num(v.g3)
     const h  = num(v.hcp)
@@ -419,7 +373,6 @@ export default function EnterScores() {
   const homeProcessed = useMemo(() => process(homeVals), [homeVals])
   const awayProcessed = useMemo(() => process(awayVals), [awayVals])
 
-  // --- Team points (per game + series) for the summary ---
   const totalsFor = (rows, processed) => ({
     scratch: {
       g1: rows.reduce((s,r)=>s+num(r.g1),0),
@@ -458,7 +411,6 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // singles totals across the table (blind-aware)
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
@@ -474,7 +426,6 @@ export default function EnterScores() {
     return { homePts, awayPts }
   }, [homeProcessed, awayProcessed, indivWin, indivDraw])
 
-  // Total points = team + singles
   const totalPoints = {
     home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
     away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
@@ -495,7 +446,6 @@ export default function EnterScores() {
       awayTeamId: +awayId,
       homeGames: clean(homeVals),
       awayGames: clean(awayVals),
-      // Send the exact totals shown so standings match exactly
       totalPointsHome: totalPoints.home,
       totalPointsAway: totalPoints.away
     }
@@ -505,7 +455,15 @@ export default function EnterScores() {
   }
 
   return (
-    <div style={{display:'grid', gap:12}}>
+    // PAGE CONTAINER CENTERED
+    <div style={{
+      display:'grid',
+      gap:12,
+      maxWidth: 1520,   // wide enough for two 720px tables + gap
+      width:'100%',
+      margin:'0 auto',
+      padding:'0 12px'
+    }}>
       {/* selectors */}
       <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12}}>
         <label>Week
@@ -529,7 +487,14 @@ export default function EnterScores() {
         </div>
       </div>
 
-      <div style={{display:'flex', gap:12, alignItems:'stretch'}}>
+      {/* both team tables — centered */}
+      <div style={{
+        display:'flex',
+        gap:12,
+        alignItems:'stretch',
+        justifyContent:'center',
+        flexWrap:'wrap'
+      }}>
         <TeamTable
           title={sheet?.homeTeam?.name || 'Team A'}
           teamOptions={sheet?.homeRoster || []}
@@ -584,8 +549,6 @@ export default function EnterScores() {
           <div className="muted" style={{fontSize:12}}>
             Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}. Blinds never score, but can block their opponent.
           </div>
-
-          {/* Total points */}
           <div style={{fontSize:20, marginTop:10}}>
             <strong>Total Points:</strong>{' '}
             {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home} — {totalPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
