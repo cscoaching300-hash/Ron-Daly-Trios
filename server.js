@@ -599,7 +599,8 @@ app.get('/api/matches', (req, res) => {
   res.json(rows);
 });
 
-/* ===== Match Sheet (mirrors Players-page HCP outside freeze) ===== */
+/* ===== Match Sheet (mirrors Players/Standings HCP outside freeze, and
+        stays frozen while entering a week until it's actually saved) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
@@ -612,7 +613,14 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
-  const statsForWeek = computePlayerStatsForLeague(league, weekNumber);
+  // Key change: while entering a week, keep display in the same "freeze week"
+  // as Players/Standings. This prevents showing calculated HCP during the
+  // freeze for players who haven't bowled that week yet.
+  const latest = latestEnteredWeek(leagueId);               // e.g. 2 if week 3 not saved yet
+  const displayWeek = Math.min(weekNumber || 0, latest || 0); // use min to mirror listing pages
+
+  // Build stats up to displayWeek (not the requested week if it isn’t saved yet)
+  const statsForWeek = computePlayerStatsForLeague(league, displayWeek);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
   const home    = teams.find(t => t.id === homeTeamId) || null;
@@ -634,7 +642,8 @@ app.get('/api/match-sheet', (req, res) => {
       average: effAvg,
       gender: p.gender || null,
       junior: !!p.junior,
-      hcp: hcpDisplayForList(league, weekNumber, p, effAvg)
+      // Use displayWeek for freeze-aware handicap display
+      hcp: hcpDisplayForList(league, displayWeek, p, effAvg)
     };
   };
 
@@ -668,6 +677,7 @@ app.get('/api/match-sheet', (req, res) => {
     homeRoster, awayRoster, homeSubs, awaySubs
   });
 });
+
 
 /* ===== Utility used by POST /api/match-sheet when client doesn't send totals ===== */
 function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, useHandicap) {
