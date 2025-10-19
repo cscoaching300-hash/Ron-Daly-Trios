@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -122,15 +123,23 @@ function normalizeLeague(league) {
 function freezeWindow(league) {
   const start = +league.hcpLockFromWeek || 0;
   const len   = +league.hcpLockWeeks || 0;
-  // Interpret hcpLockWeeks as an inclusive end offset.
-  // Example: start=0, hcpLockWeeks=3  -> frozen weeks 0,1,2,3
-  const end   = len > 0 ? start + len : -1; // inclusive end; -1 = disabled
+  // inclusive end: start=0, len=3  => weeks 0,1,2,3 are frozen
+  const end   = len > 0 ? start + len : -1;
   return { start, len, end };
 }
-
 function inFreeze(league, weekNumber) {
   const { len, start, end } = freezeWindow(league);
   return len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
+}
+
+/* ===== What week should we show if none specified?
+   Use the latest *entered* week so default views respect freeze when applicable. */
+function latestEnteredWeek(leagueId) {
+  const weeks = (db.data.sheets || [])
+    .filter(s => s && s.league_id === leagueId)
+    .map(s => +s.week_number)
+    .filter(Number.isFinite);
+  return weeks.length ? Math.max(...weeks) : 0;
 }
 
 /* ===== Handicap/Stats utils ===== */
@@ -152,7 +161,7 @@ function playerHandicapPerGame(leagueRaw, avg, storedHcp = null, isJunior = fals
   return capHcp(league, calc, isJunior);
 }
 function manualOrStartHcp(league, player) {
-  if (Number.isFinite(+player.hcp) && +player.hcp >= 0) return +player.hcp; // manual stays as-is, no cap
+  if (Number.isFinite(+player.hcp) && +player.hcp >= 0) return +player.hcp; // manual stays as-is
   const startAve = Number.isFinite(+player.start_average) ? +player.start_average : (+player.average || 0);
   return playerHandicapPerGame(league, startAve, null, !!player.junior);
 }
@@ -359,7 +368,6 @@ app.post('/api/leagues', (req, res) => {
     mode = 'handicap',
     hcpLockWeeks = 0,
     hcpLockFromWeek = 0,
-    // NEW caps
     handicapCapAdult = 0,
     handicapCapJunior = 0,
     pin
@@ -418,7 +426,6 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
   if (up.hcpLockWeeks !== undefined) league.hcpLockWeeks = numOr(up.hcpLockWeeks, 0);
   if (up.hcpLockFromWeek !== undefined) league.hcpLockFromWeek = numOr(up.hcpLockFromWeek, 0);
 
-  // NEW: caps
   if (up.handicapCapAdult !== undefined)  league.handicapCapAdult  = Math.max(0, +up.handicapCapAdult || 0);
   if (up.handicapCapJunior !== undefined) league.handicapCapJunior = Math.max(0, +up.handicapCapJunior || 0);
 
@@ -528,15 +535,15 @@ app.post('/api/teams', requireAuth, (req, res) => {
   db.write(); res.json({ id, name });
 });
 
-/* ===== Players directory (respects freeze for DISPLAY)
-   Default: no-freeze (-1) so manual HCP doesn't "stick" unless a week is specified. */
+/* ===== Players directory (default respects latest entered week / freeze) ===== */
 app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
+  const defaultWeek = latestEnteredWeek(leagueId);
   const hasWeekParam = (req.query.week != null);
-  const displayWeek = hasWeekParam ? +req.query.week : -1; // <- no-freeze default
-  const statsUpTo   = hasWeekParam ? +req.query.week : null; // use all entered stats by default
+  const displayWeek = hasWeekParam ? +req.query.week : defaultWeek; // respects freeze by default
+  const statsUpTo   = hasWeekParam ? +req.query.week : (defaultWeek > 0 ? defaultWeek : null);
 
   const leagueRaw  = (db.data.leagues || []).find(l => l.id === leagueId);
   const league = normalizeLeague(leagueRaw);
@@ -708,7 +715,6 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     db.data.matches.push(match);
   }
 
-  // Scratch series (stored like before) — blind rows still contribute to match series
   const sumSeriesScratch = (rows=[]) =>
     rows.reduce((s, r) => s + num(r.g1) + num(r.g2) + num(r.g3), 0);
 
@@ -717,7 +723,6 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   match.home_score = homeSeriesScratch;
   match.away_score = awaySeriesScratch;
 
-  // If the client reported the TOTAL points (games+series+singles), trust it.
   const rpHome = num(req.body.totalPointsHome ?? (req.body.totalPoints && req.body.totalPoints.home));
   const rpAway = num(req.body.totalPointsAway ?? (req.body.totalPoints && req.body.totalPoints.away));
   const clientProvidedTotals = ('totalPointsHome' in (req.body||{})) || ('totalPointsAway' in (req.body||{})) || ('totalPoints' in (req.body||{}));
@@ -759,7 +764,6 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     match.away_points = awayTeamPts + singles.awayPts;
   }
 
-  // overwrite sheet for same league/week/teams
   db.data.sheets = (db.data.sheets || []).filter(s =>
     !(s.league_id===league.id && s.week_number===+weekNumber && s.homeTeamId===+homeTeamId && s.awayTeamId===+awayTeamId)
   );
@@ -887,8 +891,11 @@ app.get('/api/standings/players', (req, res) => {
     db.read();
     const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-    // By default use ALL stats and NO freeze for handicap display.
-    const upToWeek = req.query.week ? +req.query.week : null;
+    // Default cutoff/display week = latest entered week (respects freeze by default)
+    const defaultWeek = latestEnteredWeek(leagueId);
+    const upToWeek = req.query.week ? +req.query.week : (defaultWeek > 0 ? defaultWeek : null);
+    const displayWeek = (upToWeek != null) ? +upToWeek : 0;
+
     const leagueRaw   = (db.data.leagues || []).find(l => l && l.id === leagueId);
     const league = normalizeLeague(leagueRaw);
     if (!league) return res.json([]);
@@ -898,7 +905,6 @@ app.get('/api/standings/players', (req, res) => {
     const players = (db.data.players || []).filter(p => p && p.league_id === league.id);
 
     const statsMap = computePlayerStatsForLeague(league, upToWeek);
-    const displayWeek = (upToWeek != null) ? +upToWeek : -1; // <- no-freeze default
 
     const groups = teams.map(team => {
       const roster = tps
