@@ -120,17 +120,20 @@ function normalizeLeague(league) {
 }
 
 /* ===== Freeze helpers ===== */
+/* ===== Freeze helpers ===== */
 function freezeWindow(league) {
   const start = +league.hcpLockFromWeek || 0;
   const len   = +league.hcpLockWeeks || 0;
-  // inclusive end: start=0, len=3  => weeks 0,1,2,3 are frozen
-  const end   = len > 0 ? start + len : -1;
+  // Interpret hcpLockWeeks as a COUNT of weeks.
+  // Example: start=0, hcpLockWeeks=3  -> frozen weeks 0,1,2 (week 3 is NOT frozen)
+  const end   = len > 0 ? start + len - 1 : -1; // inclusive end; -1 = disabled
   return { start, len, end };
 }
 function inFreeze(league, weekNumber) {
   const { len, start, end } = freezeWindow(league);
   return len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
 }
+
 
 /* ===== What week should we show if none specified?
    Use the latest *entered* week so default views respect freeze when applicable. */
