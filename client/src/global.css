@@ -36,4 +36,56 @@ table input {
   width: 64px;
   text-align: center;
 }
+/* NAV BAR POLISH */
+.header,
+.topbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.header h1,
+.topbar h1 {
+  margin: 0;
+}
+
+/* The nav container */
+.nav {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Center content in nav “pills”.
+   Works whether your nav uses <a>, <NavLink>, or <button> with class "button". */
+.nav a,
+.nav a.button,
+.nav button,
+.nav button.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+
+  padding: 10px 14px;
+  min-height: 40px;
+  line-height: 1.2;
+  white-space: normal;          /* allow 2-line labels like 'Enter Scores' */
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card, #fff);
+}
+
+/* Optional: a little hover/active polish */
+.nav a:hover,
+.nav button:hover {
+  background: var(--hover, #f7f7f7);
+}
+
+.nav a.active {
+  outline: 2px solid var(--primary, #4b7bec);
+  outline-offset: 1px;
+}
 
