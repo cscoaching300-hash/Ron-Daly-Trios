@@ -20,7 +20,7 @@ export default function App() {
     <div style={{ fontFamily:'system-ui, sans-serif', maxWidth:1200, margin:'0 auto', padding:16 }}>
       <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
         <h1 style={{ margin:0 }}>
-          🏆 Bowling League{authed && league?.name ? ` — ${league.name}` : ''}
+          {authed && league?.name ? ` — ${league.name}` : ''}
         </h1>
         <div style={{ display:'flex', gap:8, alignItems:'center' }}>
           <Nav authed={authed} />

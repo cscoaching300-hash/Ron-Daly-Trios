@@ -4,6 +4,8 @@
   --card: #ffffff;
   --border: #e5e7eb;
   --muted: #6b7280;
+  --hover: #f7f7f7;
+  --primary: #4b7bec;
 }
 :root.dark {
   --bg: #0b0e14;
@@ -11,7 +13,10 @@
   --card: #131722;
   --border: #222838;
   --muted: #9aa3b2;
+  --hover: #182033;
+  --primary: #87a5ff;
 }
+
 html, body, #root { height: 100%; }
 body {
   margin: 0;
@@ -19,65 +24,80 @@ body {
   color: var(--fg);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
 }
+
+/* Cards & text */
 .card { border: 1px solid var(--border); background: var(--card); border-radius: 12px; padding: 12px; }
 .muted { color: var(--muted); }
+
+/* Buttons (including nav pills when used as buttons/links) */
 .button {
   border: 1px solid var(--border);
   background: var(--card);
-  border-radius: 10px;
-  padding: 8px 12px;
+  border-radius: 12px;
+  padding: 10px 14px;
   font-weight: 600;
   cursor: pointer;
 
-  /* NEW — center content horizontally & vertically */
+  /* center content */
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
 
-  /* Optional: allow 2-line labels like “Enter Scores” to break nicely */
   line-height: 1.2;
-  white-space: normal;
+  white-space: nowrap;   /* keep labels on one line */
   min-height: 40px;
 }
 .button.primary { background: #111; color: #fff; border-color: #111; }
 .button.ghost { background: transparent; }
+
+/* Inputs & tables */
 input, select { background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
+input[type="number"], input[type="text"], select { height: 32px; }
+
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
 th button { all: unset; cursor: pointer; font-weight: 700; }
-input[type="number"], input[type="text"], select {
-  height: 32px;
-}
-table input {
-  border-radius: 8px;
-  width: 64px;
-  text-align: center;
-}
-/* NAV BAR POLISH */
-.header,
-.topbar {
+table input { border-radius: 8px; width: 64px; text-align: center; }
+
+/* ---------- HEADER & NAV ---------- */
+
+/* Single-row header */
+.header {
   display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: nowrap;            /* keep everything on one row */
 }
 
-.header h1,
-.topbar h1 {
+/* League title (use only league name in markup) */
+.header-title {
   margin: 0;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* The nav container */
+/* Right-side controls (theme toggle, logout, etc.) */
+.header-right {
+  margin-left: auto;
+  display: flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+/* Nav container: single row, scroll if overflow */
 .nav {
   display: flex;
   gap: 10px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;            /* no wrapping */
+  overflow-x: auto;             /* horizontal scroll on small screens */
+  padding-bottom: 4px;          /* avoid scrollbar overlap on some OS */
 }
 
-/* Center content in nav “pills”.
-   Works whether your nav uses <a>, <NavLink>, or <button> with class "button". */
+/* Nav “pills” (anchors/buttons) with centered content */
 .nav a,
 .nav a.button,
 .nav button,
@@ -90,20 +110,20 @@ table input {
   padding: 10px 14px;
   min-height: 40px;
   line-height: 1.2;
-  white-space: normal;          /* allow 2-line labels like 'Enter Scores' */
+  white-space: nowrap;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--card, #fff);
+  background: var(--card);
+  color: var(--fg);
+  text-decoration: none;
 }
 
-/* Optional: a little hover/active polish */
+/* Hover & active states */
 .nav a:hover,
-.nav button:hover {
-  background: var(--hover, #f7f7f7);
-}
+.nav button:hover { background: var(--hover); }
 
-.nav a.active {
-  outline: 2px solid var(--primary, #4b7bec);
+.nav a.active,
+.button.active {
+  outline: 2px solid var(--primary);
   outline-offset: 1px;
 }
-
