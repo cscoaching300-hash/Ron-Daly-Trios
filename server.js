@@ -122,10 +122,9 @@ function normalizeLeague(league) {
  function freezeWindow(league) {
    const start = +league.hcpLockFromWeek || 0;
    const len   = +league.hcpLockWeeks || 0;
--  const end   = len > 0 ? start + len - 1 : -1; // inclusive end; -1 means disabled
-+  // Interpret hcpLockWeeks as an inclusive end offset.
-+  // Example: start=0, hcpLockWeeks=3  -> frozen weeks 0,1,2,3
-+  const end   = len > 0 ? start + len : -1; // inclusive end; -1 = disabled
+// Interpret hcpLockWeeks as an inclusive end offset.
+// Example: start=0, hcpLockWeeks=3  -> frozen weeks 0,1,2,3
+const end   = len > 0 ? start + len : -1; // inclusive end; -1 = disabled
    return { start, len, end };
  }
 
