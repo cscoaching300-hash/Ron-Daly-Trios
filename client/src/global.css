@@ -233,3 +233,11 @@ table input { border-radius: 8px; width: 64px; text-align: center; }
   align-items: center;
   gap: 8px;
 }
+
+/* optional: hide any theme toggle chip/button */
+.theme-toggle,
+button[aria-label="Toggle theme"],
+button:has(> :where(.theme-icon)) {
+  display: none !important;
+}
+
