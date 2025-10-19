@@ -3,14 +3,20 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAuthHeaders, saveLeagueAuth, getSavedLeague, isAuthed } from '../lib/auth.js'
 
-const row   = { display:'grid', gridTemplateColumns:'140px 1fr', gap:12, alignItems:'center', margin:'8px 0' }
+const row = { display:'grid', gridTemplateColumns:'140px 1fr', gap:12, alignItems:'center', margin:'8px 0' }
 const label = { fontWeight:600, textAlign:'right' }
+
+/** Brand helpers (inline so you don't need more CSS to get the look) */
+const brand = {
+  red: '#e11d2e',
+  redDark: '#b31624',
+  ring: 'rgba(225,29,46,0.25)',
+}
 
 export default function Home() {
   const navigate = useNavigate()
-  const authed   = isAuthed()
-  const saved    = getSavedLeague()
-
+  const authed = isAuthed()
+  const saved = getSavedLeague()
   const [leagues, setLeagues] = useState([])
   const [error, setError] = useState(null)
   const [creating, setCreating] = useState(false)
@@ -55,7 +61,6 @@ export default function Home() {
       const data = await r.json()
       if (!r.ok || data?.error) throw new Error(data?.error || 'Create failed')
 
-      // immediately log in
       const lr = await fetch('/api/login', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
@@ -91,48 +96,99 @@ export default function Home() {
   }
 
   return (
-    <div className="home-wrap">
-      {/* HERO (logo + tagline) */}
-      <section className="home-hero card">
-        <div className="home-hero__left">
-          <h1 className="home-hero__title">CSCoaching Leagues</h1>
-          <p className="home-hero__tag">
-            <strong>Train. Strike. Repeat.</strong> Create or join a league, manage teams & players,
-            and enter scores with freezes, caps, and standings — all in one place.
-          </p>
-        </div>
-        <div className="home-hero__right">
-          {/* Put your logo in /public/csc.png (or change the src path) */}
-          <img src="/csc.png" alt="CSCoaching logo" className="home-hero__logo" />
+    <div style={{ display:'grid', gap:16 }}>
+      {/* HERO */}
+      <section
+        className="card"
+        style={{
+          padding:'22px 20px',
+          borderRadius:16,
+          border:'1px solid var(--border)',
+          background:
+            'radial-gradient(900px 400px at -10% -30%, rgba(225,29,46,0.08), transparent 60%),' +
+            'radial-gradient(700px 350px at 120% 10%, rgba(225,29,46,0.06), transparent 60%),' +
+            'var(--card)',
+        }}
+      >
+        <div style={{
+          display:'grid',
+          gridTemplateColumns:'1.2fr 0.8fr',
+          gap:16,
+          alignItems:'center'
+        }}>
+          {/* Left: title + copy */}
+          <div>
+            <h1 style={{margin:'2px 0 6px', fontSize:34, lineHeight:1.1}}>
+              <span style={{ fontWeight:800 }}>CSCoaching Leagues</span>
+            </h1>
+
+            <p style={{margin:'0 0 10px', fontSize:16}}>
+              <strong>Train. Strike. Repeat.</strong> Create or join a league, manage teams & players,
+              and enter scores with freezes, caps, and standings — all in one place.
+            </p>
+          </div>
+
+          {/* Right: logo */}
+          <div style={{ display:'grid', placeItems:'center' }}>
+            {/* Place your logo at client/public/csc-logo.png */}
+            <img
+              src="/csc-logo.png"
+              alt="CSCoaching logo"
+              style={{
+                width:'100%',
+                maxWidth:340,
+                filter:'drop-shadow(0 10px 24px rgba(0,0,0,0.20))',
+                userSelect:'none',
+              }}
+            />
+          </div>
         </div>
       </section>
 
-      {error && (
-        <div className="home-error">
-          <span>⚠️</span> {error}
-        </div>
-      )}
-
-      {/* FORMS */}
-      <section className="card" style={{padding:16}}>
-        <div style={{display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:12, flexWrap:'wrap'}}>
+      {/* MAIN: welcome and forms */}
+      <section className="card" style={{ padding:16, borderRadius:16 }}>
+        <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:12, flexWrap:'wrap' }}>
           <h2 style={{margin:0}}>Welcome</h2>
           {saved?.name && (
-            <div className="muted" style={{fontSize:13}}>
+            <div className="muted" style={{ fontSize:13 }}>
               Last league: <strong>{saved.name}</strong>
             </div>
           )}
         </div>
+
         <p className="muted" style={{margin:'6px 0 14px'}}>
           Create a new league or log into an existing one to access standings, teams, players, and score entry.
         </p>
 
-        <div className="home-grid">
+        {error && (
+          <div
+            style={{
+              border:`1px solid ${brand.red}`,
+              background:'rgba(225,29,46,0.06)',
+              color: brand.redDark,
+              borderRadius:12,
+              padding:'10px 12px',
+              marginBottom:12
+            }}
+          >
+            <strong>Error:</strong> {error}
+          </div>
+        )}
+
+        <div
+          style={{
+            display:'grid',
+            gridTemplateColumns:'1fr 1fr',
+            gap:16
+          }}
+        >
           {/* CREATE */}
-          <section className="home-card card" style={{ padding:16 }}>
-            <h3 className="home-card__title">Create a League</h3>
-            <p className="home-card__hint">Spin up a new league with your Admin PIN.</p>
-            <form onSubmit={createLeague} className="home-form">
+          <section className="card" style={{ padding:16, borderRadius:14 }}>
+            <h3 style={{margin:'0 0 8px'}}>Create a League</h3>
+            <p className="muted" style={{margin:'0 0 10px', fontSize:13}}>
+              Spin up a new league with your Admin PIN.
+            </p>
+            <form onSubmit={createLeague} style={{ display:'grid', gap:8 }}>
               <div style={row}>
                 <div style={label}>League Name</div>
                 <input
@@ -152,8 +208,22 @@ export default function Home() {
                   type="password"
                 />
               </div>
-              <div className="home-actions">
-                <button className="brand-btn" type="submit" disabled={creating}>
+              <div>
+                <button
+                  className="button"
+                  type="submit"
+                  disabled={creating}
+                  style={{
+                    border:`1px solid ${brand.red}`,
+                    background: brand.red,
+                    color:'#fff',
+                    minWidth:140,
+                    boxShadow:'0 6px 20px rgba(225,29,46,0.22)',
+                    borderRadius:12,
+                  }}
+                  onFocus={(e)=> e.currentTarget.style.boxShadow = `0 0 0 3px ${brand.ring}`}
+                  onBlur={(e)=> e.currentTarget.style.boxShadow = '0 6px 20px rgba(225,29,46,0.22)'}
+                >
                   {creating ? 'Creating…' : 'Create & Log In'}
                 </button>
               </div>
@@ -161,19 +231,17 @@ export default function Home() {
           </section>
 
           {/* LOGIN */}
-          <section className="home-card card" style={{ padding:16 }}>
-            <h3 className="home-card__title">Log into a League</h3>
-            <p className="home-card__hint">Use your league and Admin PIN.</p>
-            <form onSubmit={login} className="home-form">
+          <section className="card" style={{ padding:16, borderRadius:14 }}>
+            <h3 style={{margin:'0 0 8px'}}>Log into a League</h3>
+            <p className="muted" style={{margin:'0 0 10px', fontSize:13}}>
+              Use your league and Admin PIN.
+            </p>
+            <form onSubmit={login} style={{ display:'grid', gap:8 }}>
               <div style={row}>
                 <div style={label}>League</div>
                 <select value={loginLeagueId} onChange={e=>setLoginLeagueId(e.target.value)} required>
                   <option value="" disabled>Select a league…</option>
-                  {leagues.map(l => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} (#{l.id})
-                    </option>
-                  ))}
+                  {leagues.map(l => <option key={l.id} value={l.id}>{l.id} — {l.name}</option>)}
                 </select>
               </div>
               <div style={row}>
@@ -186,8 +254,20 @@ export default function Home() {
                   type="password"
                 />
               </div>
-              <div className="home-actions">
-                <button className="brand-btn brand-btn--ghost" type="submit">
+              <div>
+                <button
+                  className="button"
+                  type="submit"
+                  style={{
+                    border:`1px solid ${brand.red}`,
+                    background:'transparent',
+                    color:brand.red,
+                    minWidth:100,
+                    borderRadius:12
+                  }}
+                  onMouseOver={(e)=> e.currentTarget.style.background = 'rgba(225,29,46,0.06)'}
+                  onMouseOut={(e)=> e.currentTarget.style.background = 'transparent'}
+                >
                   Log In
                 </button>
               </div>
@@ -196,7 +276,7 @@ export default function Home() {
         </div>
 
         <div className="muted" style={{marginTop:12, fontSize:12}}>
-          Tip: You can switch leagues later from the header — your last league is remembered on this device.
+          Tip: You can switch leagues later from the header—your last league is remembered on this device.
         </div>
       </section>
     </div>
