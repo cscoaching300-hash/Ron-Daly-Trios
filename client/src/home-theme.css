@@ -1,0 +1,125 @@
+/* ===== Premium Black/Red theme — scoped to .home-theme only ===== */
+.home-theme {
+  /* Local CSS variables for dark look */
+  --bg: #0b0e14;
+  --fg: #e6e8ef;
+  --card: #101621;
+  --card-2: #0e141e;
+  --border: #1c2332;
+  --muted: #9aa3b2;
+  --hover: #171e2b;
+  --primary: #e11d2e; /* CSCoaching red */
+  --ring: rgba(225,29,46,0.35);
+
+  /* Full-bleed dark background only on Home */
+  background:
+    radial-gradient(1200px 600px at 10% -20%, rgba(225,29,46,0.10), transparent 50%),
+    radial-gradient(1000px 500px at 120% 0%, rgba(225,29,46,0.06), transparent 60%),
+    var(--bg);
+  color: var(--fg);
+
+  /* Give the page some breathing room */
+  padding: 16px;
+  min-height: calc(100vh - 32px);
+  box-sizing: border-box;
+}
+
+/* Cards inside home */
+.home-theme .card {
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)), var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.25), 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+/* Muted text */
+.home-theme .muted { color: var(--muted); }
+
+/* Buttons inside home */
+.home-theme .button,
+.home-theme button,
+.home-theme .btn {
+  border: 1px solid var(--border);
+  background: var(--card-2);
+  color: var(--fg);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.2;
+  min-height: 40px;
+}
+.home-theme .button.primary,
+.home-theme .btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 14px 36px rgba(225,29,46,0.28);
+}
+.home-theme .button:hover,
+.home-theme .btn:hover { background: var(--hover); }
+.home-theme .button.primary:focus-visible,
+.home-theme .btn.primary:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 3px var(--ring), 0 14px 36px rgba(225,29,46,0.28);
+}
+
+/* Inputs inside home */
+.home-theme input,
+.home-theme select {
+  background: #0d131d;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  height: 36px;
+  box-shadow: none;
+}
+.home-theme input:focus,
+.home-theme select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Tables if any */
+.home-theme table { width: 100%; border-collapse: collapse; }
+.home-theme th,
+.home-theme td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
+
+/* ===== Hero block, only on home ===== */
+.home-theme .home-hero {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px 24px;
+  background:
+    radial-gradient(900px 420px at -10% -30%, rgba(225,29,46,0.12), transparent 60%),
+    radial-gradient(700px 350px at 120% 10%, rgba(225,29,46,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0)),
+    var(--card);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset;
+
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 18px;
+}
+.home-theme .home-hero__logo {
+  width: 100%;
+  display: block;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.45);
+}
+.home-theme .home-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 980px) {
+  .home-theme .home-hero { grid-template-columns: 1fr; }
+  .home-theme .home-grid { grid-template-columns: 1fr; }
+}

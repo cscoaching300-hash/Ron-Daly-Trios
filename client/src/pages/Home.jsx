@@ -2,24 +2,18 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getAuthHeaders, saveLeagueAuth, getSavedLeague, isAuthed } from '../lib/auth.js'
+import '../home-theme.css'               // <-- add this import (scoped styles for Home)
 
-const row = { display:'grid', gridTemplateColumns:'140px 1fr', gap:12, alignItems:'center' }
+const row = { display:'grid', gridTemplateColumns:'140px 1fr', gap:12, alignItems:'center', margin:'8px 0' }
 const label = { fontWeight:600, textAlign:'right' }
-
-// Brand colors for buttons/glow
-const BRAND_RED = '#E11D2E'
-const BRAND_RED_DARK = '#B31624'
-const BRAND_RING = 'rgba(225,29,46,0.25)'
 
 export default function Home() {
   const navigate = useNavigate()
   const authed = isAuthed()
   const saved = getSavedLeague()
-
   const [leagues, setLeagues] = useState([])
   const [error, setError] = useState(null)
   const [creating, setCreating] = useState(false)
-
   const [name, setName] = useState('')
   const [pin, setPin] = useState('')
   const [loginLeagueId, setLoginLeagueId] = useState(saved?.id || '')
@@ -96,169 +90,49 @@ export default function Home() {
   }
 
   return (
-    <div style={{ display:'grid', gap:20 }}>
+    <div className="home-theme">{/* <- only Home gets the dark theme */}
       {/* HERO */}
-      <section
-        style={{
-          borderRadius:18,
-          padding:'28px 26px',
-          // softer, brandy background
-          background:
-            'radial-gradient(900px 420px at -10% -30%, rgba(225,29,46,0.08), transparent 60%), ' +
-            'radial-gradient(700px 350px at 120% 10%, rgba(225,29,46,0.06), transparent 60%), ' +
-            'var(--card)',
-          border:'1px solid var(--border)',
-          boxShadow:'0 10px 30px rgba(0,0,0,0.05)'
-        }}
-      >
-        <div
-          style={{
-            display:'grid',
-            gridTemplateColumns:'2fr 1.1fr',
-            gap:18,
-            alignItems:'center'
-          }}
-        >
-          {/* Left: title/strapline */}
-          <div>
-            <h1
-              style={{
-                margin:'0 0 8px',
-                fontSize:40,
-                lineHeight:1.1,
-                letterSpacing:0.2,
-                fontWeight:800
-              }}
-            >
-              CSCoaching Leagues
-            </h1>
-            <p style={{margin:0, fontSize:16, maxWidth:820}}>
-              <strong>Train. Strike. Repeat.</strong>{' '}
-              Create or join a league, manage teams & players, and enter scores with
-              freezes, caps, and standings — all in one place.
-            </p>
-          </div>
-
-          {/* Right: logo tile with subtle glow */}
-          <div
-            style={{
-              justifySelf:'end',
-              width:'min(380px, 100%)',
-              borderRadius:16,
-              padding:16,
-              background:'linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0))',
-              boxShadow:'0 1px 0 rgba(255,255,255,0.3) inset, 0 12px 28px rgba(0,0,0,0.08)',
-            }}
-          >
-            <img
-              src="/csc-logo.png"
-              alt="CSCoaching logo"
-              style={{
-                width:'100%',
-                display:'block',
-                borderRadius:12,
-                boxShadow:'0 12px 28px rgba(0,0,0,0.20)'
-              }}
-            />
-          </div>
+      <section className="home-hero">
+        <div>
+          <h1 style={{margin:0, fontSize:34, lineHeight:1.2}}>CSCoaching Leagues</h1>
+          <p className="muted" style={{margin:'8px 0 0', maxWidth:820}}>
+            <strong>Train. Strike. Repeat.</strong> Create or join a league, manage teams &amp; players, and enter scores with freezes, caps, and standings — all in one place.
+          </p>
+        </div>
+        <div style={{display:'grid', placeItems:'center'}}>
+          {/* Put your logo in /client/public/csc-logo.png */}
+          <img src="/csc-logo.png" alt="CSCoaching logo" className="home-hero__logo" />
         </div>
       </section>
 
       {/* WELCOME + FORMS */}
-      <section
-        style={{
-          borderRadius:18,
-          padding:18,
-          background:'var(--card)',
-          border:'1px solid var(--border)',
-          boxShadow:'0 10px 30px rgba(0,0,0,0.04)'
-        }}
-      >
-        <div style={{ display:'flex', alignItems:'baseline', gap:12, flexWrap:'wrap' }}>
-          <h2 style={{margin:0}}>Welcome</h2>
-          {saved?.name && (
-            <div className="muted" style={{ fontSize:13 }}>
-              Last league: <strong>{saved.name}</strong>
-            </div>
-          )}
-        </div>
-        <p className="muted" style={{margin:'6px 0 16px'}}>
+      <section className="card" style={{marginTop:16}}>
+        <h2 style={{margin:0}}>Welcome</h2>
+        <p className="muted" style={{margin:'6px 0 14px'}}>
           Create a new league or log into an existing one to access standings, teams, players, and score entry.
         </p>
 
         {error && (
-          <div
-            style={{
-              border:`1px solid ${BRAND_RED}`,
-              background:'rgba(225,29,46,0.06)',
-              color:BRAND_RED_DARK,
-              borderRadius:12,
-              padding:'10px 12px',
-              marginBottom:12
-            }}
-          >
+          <div className="card" style={{borderColor:'rgba(225,29,46,0.3)', background:'rgba(225,29,46,0.06)', color:'#ffbdbd', marginBottom:12}}>
             <strong>Error:</strong> {error}
           </div>
         )}
 
-        <div
-          style={{
-            display:'grid',
-            gridTemplateColumns:'1fr 1fr',
-            gap:18
-          }}
-        >
+        <div className="home-grid">
           {/* CREATE */}
-          <section
-            className="card"
-            style={{
-              borderRadius:14,
-              padding:16,
-              border:'1px solid var(--border)',
-              boxShadow:'0 4px 16px rgba(0,0,0,0.03)'
-            }}
-          >
-            <h3 style={{margin:'0 0 10px'}}>Create a League</h3>
-            <p className="muted" style={{margin:'0 0 12px', fontSize:13}}>
-              Spin up a new league with your Admin PIN.
-            </p>
-            <form onSubmit={createLeague} style={{ display:'grid', gap:12 }}>
+          <section className="card">
+            <h3 style={{margin:'0 0 8px'}}>Create a League</h3>
+            <form onSubmit={createLeague} style={{ display:'grid', gap:8 }}>
               <div style={row}>
                 <div style={label}>League Name</div>
-                <input
-                  placeholder="e.g. Ron Daly Trios"
-                  value={name}
-                  onChange={e=>setName(e.target.value)}
-                  required
-                />
+                <input placeholder="e.g. Ron Daly Trios" value={name} onChange={e=>setName(e.target.value)} required />
               </div>
               <div style={row}>
                 <div style={label}>Admin PIN</div>
-                <input
-                  placeholder="Choose a secure PIN"
-                  value={pin}
-                  onChange={e=>setPin(e.target.value)}
-                  required
-                  type="password"
-                />
+                <input placeholder="Choose a secure PIN" value={pin} onChange={e=>setPin(e.target.value)} required type="password" />
               </div>
               <div>
-                <button
-                  className="button"
-                  type="submit"
-                  disabled={creating}
-                  style={{
-                    border:`1px solid ${BRAND_RED}`,
-                    background:BRAND_RED,
-                    color:'#fff',
-                    minWidth:150,
-                    padding:'10px 16px',
-                    borderRadius:12,
-                    boxShadow:'0 10px 28px rgba(225,29,46,0.22)',
-                  }}
-                  onFocus={(e)=> e.currentTarget.style.boxShadow = `0 0 0 3px ${BRAND_RING}`}
-                  onBlur={(e)=> e.currentTarget.style.boxShadow = '0 10px 28px rgba(225,29,46,0.22)'}
-                >
+                <button className="button primary" type="submit" disabled={creating}>
                   {creating ? 'Creating…' : 'Create & Log In'}
                 </button>
               </div>
@@ -266,20 +140,9 @@ export default function Home() {
           </section>
 
           {/* LOGIN */}
-          <section
-            className="card"
-            style={{
-              borderRadius:14,
-              padding:16,
-              border:'1px solid var(--border)',
-              boxShadow:'0 4px 16px rgba(0,0,0,0.03)'
-            }}
-          >
-            <h3 style={{margin:'0 0 10px'}}>Log into a League</h3>
-            <p className="muted" style={{margin:'0 0 12px', fontSize:13}}>
-              Use your league and Admin PIN.
-            </p>
-            <form onSubmit={login} style={{ display:'grid', gap:12 }}>
+          <section className="card">
+            <h3 style={{margin:'0 0 8px'}}>Log into a League</h3>
+            <form onSubmit={login} style={{ display:'grid', gap:8 }}>
               <div style={row}>
                 <div style={label}>League</div>
                 <select value={loginLeagueId} onChange={e=>setLoginLeagueId(e.target.value)} required>
@@ -289,31 +152,10 @@ export default function Home() {
               </div>
               <div style={row}>
                 <div style={label}>Admin PIN</div>
-                <input
-                  placeholder="Enter PIN"
-                  value={loginPin}
-                  onChange={e=>setLoginPin(e.target.value)}
-                  required
-                  type="password"
-                />
+                <input placeholder="Enter PIN" value={loginPin} onChange={e=>setLoginPin(e.target.value)} required type="password" />
               </div>
               <div>
-                <button
-                  className="button"
-                  type="submit"
-                  style={{
-                    border:`1px solid ${BRAND_RED}`,
-                    background:'transparent',
-                    color:BRAND_RED,
-                    minWidth:110,
-                    padding:'10px 16px',
-                    borderRadius:12
-                  }}
-                  onMouseOver={(e)=> e.currentTarget.style.background = 'rgba(225,29,46,0.06)'}
-                  onMouseOut={(e)=> e.currentTarget.style.background = 'transparent'}
-                >
-                  Log In
-                </button>
+                <button className="button" type="submit">Log In</button>
               </div>
             </form>
           </section>
