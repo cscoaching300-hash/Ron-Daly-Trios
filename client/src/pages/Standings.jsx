@@ -6,7 +6,7 @@ const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
 const th = { ...baseCell, fontWeight: 700 }
 const td = baseCell
 
-// right-aligned numeric cells with tabular lining for clean columns
+// numeric alignment helper
 const thNum = { ...th, textAlign: 'right' }
 const tdNum = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 
@@ -43,7 +43,7 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
-  // Split player groups into two balanced columns
+  // split teams into two columns
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
@@ -52,18 +52,14 @@ export default function Standings() {
 
   return (
     <div className="card standings-wrap printable" style={{ display:'grid', gap:16 }}>
-      {/* Logo centered */}
+      {/* Logo */}
       <header style={{ textAlign:'center', display:'grid', gap:10 }}>
         {league?.logo ? (
-          <img
-            src={league.logo}
-            alt="League logo"
-            style={{ height: 110, objectFit:'contain', margin:'0 auto' }}
-          />
+          <img src={league.logo} alt="League logo" style={{ height:110, objectFit:'contain', margin:'0 auto' }} />
         ) : null}
       </header>
 
-      {/* TEAM STANDINGS (full width) */}
+      {/* Team standings */}
       <section className="card page-break-avoid">
         <h3 style={{ marginTop:0 }}>Team Standings</h3>
         <div style={{ overflowX:'auto' }}>
@@ -88,7 +84,7 @@ export default function Standings() {
                   <td style={td}>{r.pos}</td>
                   <td style={td}>{r.name}</td>
                   <td style={tdNum}>{r.gms ?? r.games ?? 0}</td>
-                  <td style={{...tdNum, fontWeight:700}}>{r.won}</td>
+                  <td style={{ ...tdNum, fontWeight:700 }}>{r.won}</td>
                   <td style={tdNum}>{r.pinss}</td>
                   <td style={tdNum}>{r.pinsh}</td>
                   <td style={tdNum}>{r.hgs}</td>
@@ -102,13 +98,14 @@ export default function Standings() {
         </div>
       </section>
 
-      {/* PLAYER STANDINGS (two columns) */}
+      {/* Player standings — two columns */}
       <section className="page-break-avoid">
         <h3 style={{ marginTop:0 }}>Player Standings</h3>
 
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          {/* LEFT COLUMN */}
-          <div>
+        {/* ⬇️ Use the CSS class so the minmax(0,1fr) + min-width fixes apply */}
+        <div className="standings-columns">
+          {/* Left column */}
+          <div className="standings-col">
             {leftGroups.map(group => (
               <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
@@ -136,7 +133,7 @@ export default function Standings() {
                           <td style={tdNum}>{p.hcp}</td>
                           <td style={tdNum}>{p.ave}</td>
                           <td style={tdNum}>{p.gms}</td>
-                          <td style={{...tdNum, fontWeight:700}}>{p.pts}</td>
+                          <td style={{ ...tdNum, fontWeight:700 }}>{p.pts}</td>
                           <td style={tdNum}>{p.pinss}</td>
                           <td style={tdNum}>{p.pinsh}</td>
                           <td style={tdNum}>{p.hgs}</td>
@@ -152,8 +149,8 @@ export default function Standings() {
             ))}
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div>
+          {/* Right column */}
+          <div className="standings-col">
             {rightGroups.map(group => (
               <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
@@ -181,7 +178,7 @@ export default function Standings() {
                           <td style={tdNum}>{p.hcp}</td>
                           <td style={tdNum}>{p.ave}</td>
                           <td style={tdNum}>{p.gms}</td>
-                          <td style={{...tdNum, fontWeight:700}}>{p.pts}</td>
+                          <td style={{ ...tdNum, fontWeight:700 }}>{p.pts}</td>
                           <td style={tdNum}>{p.pinss}</td>
                           <td style={tdNum}>{p.pinsh}</td>
                           <td style={tdNum}>{p.hgs}</td>
@@ -199,8 +196,8 @@ export default function Standings() {
         </div>
       </section>
 
-      {/* Export (hidden on print by your .no-print rule if present) */}
-      <div className="no-print" style={{ display:'flex', justifyContent:'flex-end' }}>
+      {/* Export (kept inside the card; add a touch of bottom padding) */}
+      <div className="no-print" style={{ display:'flex', justifyContent:'flex-end', padding:'6px 0 2px' }}>
         <button className="button" onClick={() => window.print()}>Export PDF</button>
       </div>
 
