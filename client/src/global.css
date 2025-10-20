@@ -486,3 +486,43 @@ button:has(> :where(.theme-icon)) {
   .standings-wrap thead th:not(:first-child),
   .standings-wrap tbody td:not(:first-child) { min-width: 3.4rem; }
 }
+/* --- Standings: keep text inside columns + center stats --- */
+
+/* Slightly tighten the Player column again to buy a bit more room */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  width: 19ch;               /* was 20ch — tiny trim */
+}
+
+/* For every stat column (everything except Player): center, no-wrap,
+   and clip/ellipsis so labels & numbers never spill across borders */
+.standings-wrap thead th:not(:first-child),
+.standings-wrap tbody td:not(:first-child) {
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;          /* prevents overspill into the next column */
+  text-overflow: ellipsis;   /* if the engine runs out of pixels, clip cleanly */
+  min-width: 3.5rem;         /* small floor so “PinsH/PinsS” fit */
+  line-height: 1.15;         /* keeps two-line wrapping from trying */
+}
+
+/* Make headers just a notch more compact without shrinking font size */
+.standings-wrap thead th {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  letter-spacing: .1px;
+}
+
+/* Print keeps the same guarantees */
+@media print {
+  .standings-wrap table thead th:first-child,
+  .standings-wrap table tbody td:first-child { width: 19ch; }
+  .standings-wrap thead th:not(:first-child),
+  .standings-wrap tbody td:not(:first-child) {
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 3.5rem;
+  }
+}
