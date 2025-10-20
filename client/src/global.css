@@ -273,4 +273,32 @@ button:has(> :where(.theme-icon)) {
   h2 { font-size: 20px; }
   h3 { font-size: 14px; }
 }
+/* Two-column grid for player standings */
+.standings-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Prevent tables from splitting across printed pages awkwardly */
+.page-break-avoid {
+  break-inside: avoid;
+}
+
+/* Print tweaks for A4 export — keeps two columns and reduces margins */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  body {
+    background: #fff !important;
+  }
+  .card {
+    box-shadow: none !important;
+  }
+  .standings-columns {
+    gap: 12px;
+  }
+}
 
