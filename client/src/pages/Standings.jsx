@@ -1,156 +1,181 @@
-// src/pages/Standings.jsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import WeekPicker from '../components/WeekPicker.jsx';
-import { getAuthHeaders } from '../lib/auth.js';
+// client/src/pages/Standings.jsx
+import React, { useEffect, useMemo, useState } from 'react'
+import { getAuthHeaders, getSavedLeague } from '../lib/auth.js'
+
+const td = { padding: 6, borderBottom: '1px solid var(--border)' }
+const th = { ...td, fontWeight: 700 }
+const num = v => (Number.isFinite(+v) ? +v : 0)
 
 export default function Standings() {
-  const [params] = useSearchParams();
-  const week = params.get('week'); // string or null
+  const saved = getSavedLeague()
+  const [league, setLeague] = useState(null)
+  const [teams, setTeams] = useState([])           // /api/standings
+  const [playersByTeam, setPlayersByTeam] = useState([]) // /api/standings/players
+  const [loading, setLoading] = useState(true)
 
-  const [league, setLeague] = useState(null);
-  const [teams, setTeams] = useState([]);
-  const [playerGroups, setPlayerGroups] = useState([]);
-  const [enteredWeekOptions, setEnteredWeekOptions] = useState([]);
-
-  const authHeaders = useMemo(() => getAuthHeaders(), []);
-
-  // Load current league (optional, just for title / total weeks fallback)
+  // Fetch league for logo & officers
   useEffect(() => {
-    (async () => {
-      const res = await fetch('/api/leagues');
-      const all = await res.json();
-      const id = Number(authHeaders['x-league-id'] || 0);
-      setLeague(all.find(l => l.id === id) || null);
-    })();
-  }, [authHeaders]);
+    fetch('/api/leagues', { headers: getAuthHeaders() })
+      .then(r => r.json())
+      .then(list => {
+        const current = list.find(l => l.id === saved?.id)
+        setLeague(current || null)
+      })
+      .catch(()=>{})
+  }, [saved?.id])
 
-  // Load **entered** weeks for dropdown
+  // Fetch standings
   useEffect(() => {
-    (async () => {
-      const res = await fetch(`/api/weeks?enteredOnly=1`, { headers: authHeaders });
-      const weeks = await res.json(); // [{ id, week_number, date, sheet_count }]
-      // Build labels like "Week 4 — 2024-10-03" when a date exists
-      const opts = weeks.map(w => {
-        const iso = w.date ? new Date(w.date).toISOString().slice(0, 10) : null;
-        return { value: String(w.week_number), label: iso ? `Week ${w.week_number} — ${iso}` : `Week ${w.week_number}` };
-      });
-      setEnteredWeekOptions(opts);
-    })();
-  }, [authHeaders]);
+    let mounted = true
+    setLoading(true)
+    Promise.all([
+      fetch(`/api/standings`, { headers: getAuthHeaders() }).then(r=>r.json()),
+      fetch(`/api/standings/players`, { headers: getAuthHeaders() }).then(r=>r.json()),
+    ])
+    .then(([teamRows, playerGroups]) => {
+      if (!mounted) return
+      setTeams(Array.isArray(teamRows) ? teamRows : [])
+      setPlayersByTeam(Array.isArray(playerGroups) ? playerGroups : [])
+    })
+    .finally(() => mounted && setLoading(false))
+    return () => { mounted = false }
+  }, [])
 
-  // Fetch team standings (week-aware)
-  useEffect(() => {
-    (async () => {
-      const q = week ? `?week=${encodeURIComponent(week)}` : '';
-      const res = await fetch(`/api/standings${q}`, { headers: authHeaders });
-      setTeams(await res.json());
-    })();
-  }, [authHeaders, week]);
+  const officerList = useMemo(() => {
+    const o = league?.officials || {}
+    return [
+      ['Chairperson',  o.chair],
+      ['Vice Chair',   o.viceChair],
+      ['Treasurer',    o.treasurer],
+      ['Secretary',    o.secretary],
+    ].filter(([,v]) => (v||'').trim().length > 0)
+  }, [league])
 
-  // Fetch individual standings (week-aware)
-  useEffect(() => {
-    (async () => {
-      const q = week ? `?week=${encodeURIComponent(week)}` : '';
-      const res = await fetch(`/api/standings/players${q}`, { headers: authHeaders });
-      setPlayerGroups(await res.json());
-    })();
-  }, [authHeaders, week]);
-
-  const maxWeeks = league?.weeks ? Number(league.weeks) : 20;
+  const printNow = () => window.print()
 
   return (
-    <div style={{ display:'grid', gap:16 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-        <h2 style={{ margin:0 }}>Standings{week ? ` – Week ${week}` : ''}</h2>
-        {/* Pass the options so the picker shows only entered weeks.
-            It will fall back to 1..maxWeeks if options is empty. */}
-        <WeekPicker options={enteredWeekOptions} maxWeeks={maxWeeks} />
-      </div>
+    <div className="card printable" style={{ display:'grid', gap:16 }}>
+      {/* Header */}
+      <header style={{ textAlign:'center', padding:'8px 0 2px' }}>
+        {league?.logo ? (
+          <img
+            src={league.logo}
+            alt="League logo"
+            style={{ height: 100, objectFit:'contain', display:'block', margin:'0 auto 8px' }}
+          />
+        ) : null}
+        <h2 style={{ margin:'0 0 4px' }}>{league?.name || 'Standings'}</h2>
 
-      {/* Team standings */}
-      <div style={{ border:'1px solid var(--border, #ddd)', borderRadius:12, padding:12 }}>
-        <h3 style={{ marginTop:0 }}>Teams</h3>
-        <div style={{ overflowX:'auto' }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr>
-                <th align="left">#</th>
-                <th align="left">Team</th>
-                <th>Gms</th>
-                <th>Pts</th>
-                <th>PinS</th>
-                <th>PinH</th>
-                <th>Hgs</th>
-                <th>Hgh</th>
-                <th>Hss</th>
-                <th>Hsh</th>
-              </tr>
-            </thead>
-            <tbody>
-              {teams.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.pos}</td>
-                  <td>{t.name}</td>
-                  <td align="center">{t.games}</td>
-                  <td align="center">{t.won}</td>
-                  <td align="center">{t.pinss}</td>
-                  <td align="center">{t.pinsh}</td>
-                  <td align="center">{t.hgs}</td>
-                  <td align="center">{t.hgh}</td>
-                  <td align="center">{t.hss}</td>
-                  <td align="center">{t.hsh}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Individual standings by team */}
-      <div style={{ display:'grid', gap:16 }}>
-        {playerGroups.map(group => (
-          <div key={group.team.id} style={{ border:'1px solid var(--border, #ddd)', borderRadius:12, padding:12 }}>
-            <h3 style={{ marginTop:0 }}>{group.team.name}</h3>
-            <div style={{ overflowX:'auto' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                <thead>
-                  <tr>
-                    <th align="left">Player</th>
-                    <th>Gms</th>
-                    <th>Pts</th>
-                    <th>Hcp</th>
-                    <th>Ave.</th>
-                    <th>PinS</th>
-                    <th>PinH</th>
-                    <th>Hgs</th>
-                    <th>Hgh</th>
-                    <th>Hss</th>
-                    <th>Hsh</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(group.players || []).map(p => (
-                    <tr key={p.player_id}>
-                      <td>{p.name}</td>
-                      <td align="center">{p.gms}</td>
-                      <td align="center">{p.pts}</td>
-                      <td align="center">{p.hcp}</td>
-                      <td align="center">{p.ave}</td>
-                      <td align="center">{p.pinss}</td>
-                      <td align="center">{p.pinsh}</td>
-                      <td align="center">{p.hgs}</td>
-                      <td align="center">{p.hgh}</td>
-                      <td align="center">{p.hss}</td>
-                      <td align="center">{p.hsh}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        {officerList.length > 0 && (
+          <div
+            style={{
+              display:'grid',
+              gridTemplateColumns:'repeat(4, minmax(0,1fr))',
+              gap:8,
+              justifyItems:'center'
+            }}
+            className="officers"
+          >
+            {officerList.map(([role, name]) => (
+              <div key={role} style={{ fontSize:14 }}>
+                <div className="muted" style={{ fontWeight:600 }}>{role}</div>
+                <div>{name}</div>
+              </div>
+            ))}
           </div>
-        ))}
+        )}
+      </header>
+
+      {/* Action bar */}
+      <div className="no-print" style={{ display:'flex', justifyContent:'flex-end' }}>
+        <button className="button" onClick={printNow}>Export PDF</button>
       </div>
+
+      {/* Two-column content */}
+      <section className="two-col">
+        {/* Left: Team standings */}
+        <div className="column card">
+          <h3 style={{ marginTop:0 }}>Team Standings</h3>
+          {loading ? (
+            <div className="muted">Loading…</div>
+          ) : (
+            <table style={{ width:'100%', borderCollapse:'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th}>Pos</th>
+                  <th style={th}>Team</th>
+                  <th style={th}>Pts</th>
+                  <th style={th}>PinsH</th>
+                  <th style={th}>PinsS</th>
+                  <th style={th}>HGH</th>
+                  <th style={th}>HGS</th>
+                  <th style={th}>HSH</th>
+                  <th style={th}>HSS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teams.map(t => (
+                  <tr key={t.id}>
+                    <td style={td}>{t.pos}</td>
+                    <td style={td}>{t.name}</td>
+                    <td style={{...td, fontWeight:700}}>{t.won}</td>
+                    <td style={td}>{num(t.pinsh)}</td>
+                    <td style={td}>{num(t.pinss)}</td>
+                    <td style={td}>{num(t.hgh)}</td>
+                    <td style={td}>{num(t.hgs)}</td>
+                    <td style={td}>{num(t.hsh)}</td>
+                    <td style={td}>{num(t.hss)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Right: Player standings by team */}
+        <div className="column card">
+          <h3 style={{ marginTop:0 }}>Player Standings</h3>
+
+          {loading ? (
+            <div className="muted">Loading…</div>
+          ) : (
+            <div style={{ display:'grid', gap:12 }}>
+              {playersByTeam.map(group => (
+                <div key={group.team?.id || Math.random()} className="card" style={{ padding:8 }}>
+                  <div style={{ fontWeight:700, marginBottom:4 }}>
+                    {group.team?.name || 'Team'}
+                  </div>
+                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Player</th>
+                        <th style={th}>Hcp</th>
+                        <th style={th}}>Ave</th>
+                        <th style={th}>Gms</th>
+                        <th style={th}>Pts</th>
+                        <th style={th}>PinsH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(group.players || []).map(p => (
+                        <tr key={p.player_id}>
+                          <td style={td}>{p.name}</td>
+                          <td style={td}>{num(p.hcp)}</td>
+                          <td style={td}>{num(p.ave)}</td>
+                          <td style={td}>{num(p.gms)}</td>
+                          <td style={{...td, fontWeight:700}}>{num(p.pts)}</td>
+                          <td style={td}>{num(p.pinsh)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
     </div>
-  );
+  )
 }
+

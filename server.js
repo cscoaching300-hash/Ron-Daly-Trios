@@ -116,6 +116,15 @@ function normalizeLeague(league) {
   safe.indivPointsWin = Number.isFinite(+safe.indivPointsWin) ? +safe.indivPointsWin : 0;
   safe.indivPointsDraw= Number.isFinite(+safe.indivPointsDraw)? +safe.indivPointsDraw: 0;
 
+  // Officials (brand header on Standings)
+  const off = (league && league.officials) || {};
+  safe.officials = {
+    chair:       (off.chair || '').toString(),
+    viceChair:   (off.viceChair || '').toString(),
+    treasurer:   (off.treasurer || '').toString(),
+    secretary:   (off.secretary || '').toString(),
+  };
+
   return safe;
 }
 
@@ -399,6 +408,13 @@ app.post('/api/leagues', (req, res) => {
     handicapCapJunior: Math.max(0, +handicapCapJunior || 0),
     pin: String(pin),
     logo: null,
+    officials: {
+      chair: (req.body?.officials?.chair || '').toString(),
+      viceChair: (req.body?.officials?.viceChair || '').toString(),
+      treasurer: (req.body?.officials?.treasurer || '').toString(),
+      secretary: (req.body?.officials?.secretary || '').toString(),
+    },
+
     created_at: new Date().toISOString()
   };
   db.data.leagues.push(league);
@@ -431,6 +447,18 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
 
   if (up.handicapCapAdult !== undefined)  league.handicapCapAdult  = Math.max(0, +up.handicapCapAdult || 0);
   if (up.handicapCapJunior !== undefined) league.handicapCapJunior = Math.max(0, +up.handicapCapJunior || 0);
+  
+// Update officials (merge)
+  if (up.officials && typeof up.officials === 'object') {
+    league.officials = {
+      ...(league.officials || { chair:'', viceChair:'', treasurer:'', secretary:'' }),
+      chair:     up.officials.chair     !== undefined ? String(up.officials.chair)     : (league.officials?.chair || ''),
+      viceChair: up.officials.viceChair !== undefined ? String(up.officials.viceChair) : (league.officials?.viceChair || ''),
+      treasurer: up.officials.treasurer !== undefined ? String(up.officials.treasurer) : (league.officials?.treasurer || ''),
+      secretary: up.officials.secretary !== undefined ? String(up.officials.secretary) : (league.officials?.secretary || ''),
+    };
+  }
+
 
   db.write();
   res.json({ ok: true, league: normalizeLeague(league) });

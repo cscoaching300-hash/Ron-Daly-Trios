@@ -240,4 +240,37 @@ button[aria-label="Toggle theme"],
 button:has(> :where(.theme-icon)) {
   display: none !important;
 }
+/* Two-column layout for the Standings content area */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.two-col .column { break-inside: avoid; }
+
+/* Print styles for A4 PDF */
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+
+  /* Remove non-print controls */
+  .no-print { display: none !important; }
+
+  /* Make the printable card fill the page width */
+  .printable {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+
+  /* Ensure 2 columns on print */
+  .two-col {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10mm !important;
+  }
+
+  /* Slightly smaller fonts for print density */
+  table, th, td { font-size: 11px; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 14px; }
+}
 

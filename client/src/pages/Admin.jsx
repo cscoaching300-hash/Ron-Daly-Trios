@@ -31,9 +31,16 @@ export default function Admin() {
     indivPointsDraw:0,
     hcpLockFromWeek:1,
     hcpLockWeeks:0,
-    // NEW: caps
+    // Caps
     handicapCapAdult: 0,
     handicapCapJunior: 0,
+    // NEW: Officers (admin-entered)
+    officials: {
+      chair: '',
+      viceChair: '',
+      treasurer: '',
+      secretary: ''
+    }
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -72,9 +79,14 @@ export default function Admin() {
               indivPointsDraw: current.indivPointsDraw ?? 0,
               hcpLockFromWeek: current.hcpLockFromWeek ?? 1,
               hcpLockWeeks: current.hcpLockWeeks ?? 0,
-              // NEW: bring caps in if present, default 0 (no cap)
               handicapCapAdult: current.handicapCapAdult ?? 0,
               handicapCapJunior: current.handicapCapJunior ?? 0,
+              officials: {
+                chair: current.officials?.chair || '',
+                viceChair: current.officials?.viceChair || '',
+                treasurer: current.officials?.treasurer || '',
+                secretary: current.officials?.secretary || ''
+              }
             })
           }
         }
@@ -112,6 +124,8 @@ export default function Admin() {
   const on = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
   const onNum = (k) => (e) => setForm(f => ({ ...f, [k]: Number(e.target.value) || 0 }))
   const onMode = (e) => setForm(f => ({ ...f, mode: e.target.value === 'scratch' ? 'scratch' : 'handicap' }))
+  const onOfficial = (k) => (e) =>
+    setForm(f => ({ ...f, officials: { ...(f.officials || {}), [k]: e.target.value } }))
 
   const save = async (e) => {
     e?.preventDefault?.()
@@ -119,25 +133,33 @@ export default function Admin() {
     setSaving(true)
     setError(null)
     try {
+      const body = {
+        ...form,
+        // ensure numbers
+        gamesPerWeek: Number(form.gamesPerWeek) || 0,
+        handicapBase: Number(form.handicapBase) || 0,
+        handicapPercent: Number(form.handicapPercent) || 0,
+        teamPointsWin: Number(form.teamPointsWin) || 0,
+        teamPointsDraw: Number(form.teamPointsDraw) || 0,
+        indivPointsWin: Number(form.indivPointsWin) || 0,
+        indivPointsDraw: Number(form.indivPointsDraw) || 0,
+        hcpLockFromWeek: Number(form.hcpLockFromWeek) || 0,
+        hcpLockWeeks: Number(form.hcpLockWeeks) || 0,
+        handicapCapAdult: Number(form.handicapCapAdult) || 0,
+        handicapCapJunior: Number(form.handicapCapJunior) || 0,
+        // NEW: officials block
+        officials: {
+          chair: String(form.officials?.chair || ''),
+          viceChair: String(form.officials?.viceChair || ''),
+          treasurer: String(form.officials?.treasurer || ''),
+          secretary: String(form.officials?.secretary || '')
+        }
+      }
+
       const r = await fetch(`/api/leagues/${league.id}`, {
         method:'PUT',
         headers: { 'Content-Type':'application/json', ...getAuthHeaders() },
-        body: JSON.stringify({
-          ...form,
-          // ensure numbers
-          gamesPerWeek: Number(form.gamesPerWeek) || 0,
-          handicapBase: Number(form.handicapBase) || 0,
-          handicapPercent: Number(form.handicapPercent) || 0,
-          teamPointsWin: Number(form.teamPointsWin) || 0,
-          teamPointsDraw: Number(form.teamPointsDraw) || 0,
-          indivPointsWin: Number(form.indivPointsWin) || 0,
-          indivPointsDraw: Number(form.indivPointsDraw) || 0,
-          hcpLockFromWeek: Number(form.hcpLockFromWeek) || 0,
-          hcpLockWeeks: Number(form.hcpLockWeeks) || 0,
-          // NEW: send caps
-          handicapCapAdult: Number(form.handicapCapAdult) || 0,
-          handicapCapJunior: Number(form.handicapCapJunior) || 0,
-        })
+        body: JSON.stringify(body)
       })
       const data = await r.json()
       if (!r.ok || data?.error) throw new Error(data?.error || 'Save failed')
@@ -241,7 +263,7 @@ export default function Admin() {
                   <input inputMode="numeric" value={form.hcpLockWeeks} onChange={onNum('hcpLockWeeks')} />
                 </div>
 
-                {/* NEW: Handicap Caps */}
+                {/* Handicap Caps */}
                 <div style={row}>
                   <div style={label}>Adult Handicap Cap</div>
                   <div>
@@ -268,31 +290,35 @@ export default function Admin() {
               </>
             )}
 
-            <div style={row}>
-              <div style={label}>Team Points Win</div>
-              <input inputMode="numeric" value={form.teamPointsWin} onChange={onNum('teamPointsWin')} />
-            </div>
-            <div style={row}>
-              <div style={label}>Team Points Draw</div>
-              <input inputMode="numeric" value={form.teamPointsDraw} onChange={onNum('teamPointsDraw')} />
-            </div>
-
-            <div style={row}>
-              <div style={label}>Indiv. Points Win</div>
-              <input inputMode="numeric" value={form.indivPointsWin} onChange={onNum('indivPointsWin')} />
-            </div>
-            <div style={row}>
-              <div style={label}>Indiv. Points Draw</div>
-              <input inputMode="numeric" value={form.indivPointsDraw} onChange={onNum('indivPointsDraw')} />
-            </div>
-
+            {/* Logo upload */}
             <div style={row}>
               <div style={label}>Logo</div>
               <div>
-                {league.logo && <img alt="logo" src={league.logo} style={{ height:40, marginRight:8 }} />}
+                {league.logo && <img alt="logo" src={league.logo} style={{ height:40, marginRight:8, verticalAlign:'middle' }} />}
                 <input type="file" accept="image/*" onChange={onLogo} />
                 <div style={small}>Upload replaces the current logo.</div>
               </div>
+            </div>
+
+            {/* NEW: Officers */}
+            <hr style={{ border:'0', borderTop:'1px solid var(--border)', margin:'12px 0' }} />
+            <h4 style={{ margin:'0 0 8px' }}>League Officers (shown on Standings header)</h4>
+
+            <div style={row}>
+              <div style={label}>Chairperson</div>
+              <input value={form.officials.chair} onChange={onOfficial('chair')} placeholder="Full name" />
+            </div>
+            <div style={row}>
+              <div style={label}>Vice Chairperson</div>
+              <input value={form.officials.viceChair} onChange={onOfficial('viceChair')} placeholder="Full name" />
+            </div>
+            <div style={row}>
+              <div style={label}>Treasurer</div>
+              <input value={form.officials.treasurer} onChange={onOfficial('treasurer')} placeholder="Full name" />
+            </div>
+            <div style={row}>
+              <div style={label}>Secretary</div>
+              <input value={form.officials.secretary} onChange={onOfficial('secretary')} placeholder="Full name" />
             </div>
 
             <div style={{ marginTop:8 }}>
