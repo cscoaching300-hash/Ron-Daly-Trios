@@ -434,3 +434,27 @@ button:has(> :where(.theme-icon)) {
   .standings-wrap th,
   .standings-wrap td { border-color: #000; } /* darker lines for print */
 }
+/* --- Fix header overlapping in standings tables --- */
+.standings-wrap thead th {
+  white-space: normal;       /* allow wrapping on headers */
+  text-align: center;        /* looks cleaner for short labels */
+  line-height: 1.1;          /* tighter lines when a header wraps */
+  font-size: 12.5px;         /* a touch smaller to buy space */
+  padding: 5px 6px;          /* slightly tighter vertical padding */
+  hyphens: auto;             /* let the engine break long words if needed */
+}
+
+/* Keep body cells (numbers) tight and on one line */
+.standings-wrap tbody td:not(:first-child) {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Player column still wraps (as before) */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  white-space: normal;
+  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
