@@ -68,13 +68,14 @@ export default function Standings() {
               <tr>
                 <th style={th}>Pos</th>
                 <th style={th}>Team</th>
+                {/* Order mirrors player-style stats */}
                 <th style={th}>Pts</th>
-                <th style={th}>PinsH</th>
                 <th style={th}>PinsS</th>
-                <th style={th}>HGH</th>
+                <th style={th}>PinsH</th>
                 <th style={th}>HGS</th>
-                <th style={th}>HSH</th>
+                <th style={th}>HGH</th>
                 <th style={th}>HSS</th>
+                <th style={th}>HSH</th>
               </tr>
             </thead>
             <tbody>
@@ -83,12 +84,12 @@ export default function Standings() {
                   <td style={td}>{r.pos}</td>
                   <td style={td}>{r.name}</td>
                   <td style={{...td, fontWeight:700}}>{r.won}</td>
-                  <td style={td}>{r.pinsh}</td>
                   <td style={td}>{r.pinss}</td>
-                  <td style={td}>{r.hgh}</td>
+                  <td style={td}>{r.pinsh}</td>
                   <td style={td}>{r.hgs}</td>
-                  <td style={td}>{r.hsh}</td>
+                  <td style={td}>{r.hgh}</td>
                   <td style={td}>{r.hss}</td>
+                  <td style={td}>{r.hsh}</td>
                 </tr>
               ))}
             </tbody>
@@ -202,4 +203,3 @@ export default function Standings() {
     </div>
   )
 }
-

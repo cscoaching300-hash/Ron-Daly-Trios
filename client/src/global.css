@@ -301,4 +301,39 @@ button:has(> :where(.theme-icon)) {
     gap: 12px;
   }
 }
+/* Keep inner cards neatly inside the main card */
+.standings-wrap {
+  display: grid;
+  gap: 16px;
+}
+
+.standings-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* Ensure the inner cards don’t “bulge” past the parent padding */
+.standings-columns > .standings-col > .card,
+.standings-columns > .standings-col {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.card {
+  overflow: hidden; /* prevents subtle 1–2px overflow from tables */
+}
+
+/* Prevent printed page breaks inside tables/cards */
+.page-break-avoid {
+  break-inside: avoid;
+}
+
+/* Print: keep it tidy on A4 */
+@media print {
+  @page { size: A4 portrait; margin: 10mm; }
+  body { background: #fff !important; }
+  .card { box-shadow: none !important; }
+  .standings-columns { gap: 12px; }
+}
 
