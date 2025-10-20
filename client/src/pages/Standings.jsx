@@ -2,9 +2,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getAuthHeaders } from '../lib/auth.js'
 
-const cell = { padding: 8, borderBottom: '1px solid var(--border)' }
-const th = { ...cell, fontWeight: 700 }
-const td = cell
+const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
+const th = { ...baseCell, fontWeight: 700 }
+const td = baseCell
+
+// right-aligned numeric cells with tabular lining for clean columns
+const thNum = { ...th, textAlign: 'right' }
+const tdNum = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 
 export default function Standings() {
   const [league, setLeague] = useState(null)
@@ -39,7 +43,7 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
-  // Split groups into two columns (balanced by index)
+  // Split player groups into two balanced columns
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
@@ -47,9 +51,9 @@ export default function Standings() {
   }, [playerGroups])
 
   return (
-    <div className="card" style={{ display:'grid', gap:16 }}>
+    <div className="card standings-wrap printable" style={{ display:'grid', gap:16 }}>
       {/* Logo centered */}
-      <header style={{ textAlign:'center' }}>
+      <header style={{ textAlign:'center', display:'grid', gap:10 }}>
         {league?.logo ? (
           <img
             src={league.logo}
@@ -59,8 +63,8 @@ export default function Standings() {
         ) : null}
       </header>
 
-      {/* TEAM STANDINGS */}
-      <section className="card">
+      {/* TEAM STANDINGS (full width) */}
+      <section className="card page-break-avoid">
         <h3 style={{ marginTop:0 }}>Team Standings</h3>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -68,13 +72,14 @@ export default function Standings() {
               <tr>
                 <th style={th}>Pos</th>
                 <th style={th}>Team</th>
-                <th style={th}>Pts</th>
-                <th style={th}>PinsS</th>
-                <th style={th}>PinsH</th>
-                <th style={th}>HGS</th>
-                <th style={th}>HGH</th>
-                <th style={th}>HSS</th>
-                <th style={th}>HSH</th>
+                <th style={thNum}>Gms</th>
+                <th style={thNum}>Pts</th>
+                <th style={thNum}>PinsS</th>
+                <th style={thNum}>PinsH</th>
+                <th style={thNum}>HGS</th>
+                <th style={thNum}>HGH</th>
+                <th style={thNum}>HSS</th>
+                <th style={thNum}>HSH</th>
               </tr>
             </thead>
             <tbody>
@@ -82,13 +87,14 @@ export default function Standings() {
                 <tr key={r.id}>
                   <td style={td}>{r.pos}</td>
                   <td style={td}>{r.name}</td>
-                  <td style={{...td, fontWeight:700}}>{r.won}</td>
-                  <td style={td}>{r.pinss}</td>
-                  <td style={td}>{r.pinsh}</td>
-                  <td style={td}>{r.hgs}</td>
-                  <td style={td}>{r.hgh}</td>
-                  <td style={td}>{r.hss}</td>
-                  <td style={td}>{r.hsh}</td>
+                  <td style={tdNum}>{r.gms ?? r.games ?? 0}</td>
+                  <td style={{...tdNum, fontWeight:700}}>{r.won}</td>
+                  <td style={tdNum}>{r.pinss}</td>
+                  <td style={tdNum}>{r.pinsh}</td>
+                  <td style={tdNum}>{r.hgs}</td>
+                  <td style={tdNum}>{r.hgh}</td>
+                  <td style={tdNum}>{r.hss}</td>
+                  <td style={tdNum}>{r.hsh}</td>
                 </tr>
               ))}
             </tbody>
@@ -96,111 +102,105 @@ export default function Standings() {
         </div>
       </section>
 
-      {/* PLAYER STANDINGS — TWO COLUMNS */}
-      <section>
+      {/* PLAYER STANDINGS (two columns) */}
+      <section className="page-break-avoid">
         <h3 style={{ marginTop:0 }}>Player Standings</h3>
 
-        <div
-          style={{
-            display:'grid',
-            gridTemplateColumns:'1fr 1fr',
-            gap:16,
-          }}
-        >
-          {/* LEFT */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          {/* LEFT COLUMN */}
           <div>
             {leftGroups.map(group => (
-              <section key={group.team.id} className="card" style={{ overflow:'hidden' }}>
+              <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
                       <tr>
                         <th style={th}>Player</th>
-                        <th style={th}>Hcp</th>
-                        <th style={th}>Ave</th>
-                        <th style={th}>Gms</th>
-                        <th style={th}>Pts</th>
-                        <th style={th}>PinsS</th>
-                        <th style={th}>PinsH</th>
-                        <th style={th}>HGS</th>
-                        <th style={th}>HGH</th>
-                        <th style={th}>HSS</th>
-                        <th style={th}>HSH</th>
+                        <th style={thNum}>Hcp</th>
+                        <th style={thNum}>Ave</th>
+                        <th style={thNum}>Gms</th>
+                        <th style={thNum}>Pts</th>
+                        <th style={thNum}>PinsS</th>
+                        <th style={thNum}>PinsH</th>
+                        <th style={thNum}>HGS</th>
+                        <th style={thNum}>HGH</th>
+                        <th style={thNum}>HSS</th>
+                        <th style={thNum}>HSH</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(group.players || []).map(p => (
                         <tr key={p.player_id}>
                           <td style={td}>{p.name}</td>
-                          <td style={td}>{p.hcp}</td>
-                          <td style={td}>{p.ave}</td>
-                          <td style={td}>{p.gms}</td>
-                          <td style={{...td, fontWeight:700}}>{p.pts}</td>
-                          <td style={td}>{p.pinss}</td>
-                          <td style={td}>{p.pinsh}</td>
-                          <td style={td}>{p.hgs}</td>
-                          <td style={td}>{p.hgh}</td>
-                          <td style={td}>{p.hss}</td>
-                          <td style={td}>{p.hsh}</td>
+                          <td style={tdNum}>{p.hcp}</td>
+                          <td style={tdNum}>{p.ave}</td>
+                          <td style={tdNum}>{p.gms}</td>
+                          <td style={{...tdNum, fontWeight:700}}>{p.pts}</td>
+                          <td style={tdNum}>{p.pinss}</td>
+                          <td style={tdNum}>{p.pinsh}</td>
+                          <td style={tdNum}>{p.hgs}</td>
+                          <td style={tdNum}>{p.hgh}</td>
+                          <td style={tdNum}>{p.hss}</td>
+                          <td style={tdNum}>{p.hsh}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </div>
             ))}
           </div>
 
-          {/* RIGHT */}
+          {/* RIGHT COLUMN */}
           <div>
             {rightGroups.map(group => (
-              <section key={group.team.id} className="card" style={{ overflow:'hidden' }}>
+              <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
                       <tr>
                         <th style={th}>Player</th>
-                        <th style={th}>Hcp</th>
-                        <th style={th}>Ave</th>
-                        <th style={th}>Gms</th>
-                        <th style={th}>Pts</th>
-                        <th style={th}>PinsS</th>
-                        <th style={th}>PinsH</th>
-                        <th style={th}>HGS</th>
-                        <th style={th}>HGH</th>
-                        <th style={th}>HSS</th>
-                        <th style={th}>HSH</th>
+                        <th style={thNum}>Hcp</th>
+                        <th style={thNum}>Ave</th>
+                        <th style={thNum}>Gms</th>
+                        <th style={thNum}>Pts</th>
+                        <th style={thNum}>PinsS</th>
+                        <th style={thNum}>PinsH</th>
+                        <th style={thNum}>HGS</th>
+                        <th style={thNum}>HGH</th>
+                        <th style={thNum}>HSS</th>
+                        <th style={thNum}>HSH</th>
                       </tr>
                     </thead>
                     <tbody>
                       {(group.players || []).map(p => (
                         <tr key={p.player_id}>
                           <td style={td}>{p.name}</td>
-                          <td style={td}>{p.hcp}</td>
-                          <td style={td}>{p.ave}</td>
-                          <td style={td}>{p.gms}</td>
-                          <td style={{...td, fontWeight:700}}>{p.pts}</td>
-                          <td style={td}>{p.pinss}</td>
-                          <td style={td}>{p.pinsh}</td>
-                          <td style={td}>{p.hgs}</td>
-                          <td style={td}>{p.hgh}</td>
-                          <td style={td}>{p.hss}</td>
-                          <td style={td}>{p.hsh}</td>
+                          <td style={tdNum}>{p.hcp}</td>
+                          <td style={tdNum}>{p.ave}</td>
+                          <td style={tdNum}>{p.gms}</td>
+                          <td style={{...tdNum, fontWeight:700}}>{p.pts}</td>
+                          <td style={tdNum}>{p.pinss}</td>
+                          <td style={tdNum}>{p.pinsh}</td>
+                          <td style={tdNum}>{p.hgs}</td>
+                          <td style={tdNum}>{p.hgh}</td>
+                          <td style={tdNum}>{p.hss}</td>
+                          <td style={tdNum}>{p.hsh}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Export */}
-      <div style={{ display:'flex', justifyContent:'flex-end' }}>
+      {/* Export (hidden on print by your .no-print rule if present) */}
+      <div className="no-print" style={{ display:'flex', justifyContent:'flex-end' }}>
         <button className="button" onClick={() => window.print()}>Export PDF</button>
       </div>
 
