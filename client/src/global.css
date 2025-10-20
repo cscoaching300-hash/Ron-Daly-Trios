@@ -1,339 +1,205 @@
-:root {
-  --bg: #ffffff;
-  --fg: #111111;
-  --card: #ffffff;
-  --border: #e5e7eb;
-  --muted: #6b7280;
-  --hover: #f7f7f7;
-  --primary: #4b7bec;
+// client/src/pages/Standings.jsx
+import React, { useEffect, useMemo, useState } from 'react'
+import { getAuthHeaders } from '../lib/auth.js'
+
+const cell = { padding: 8, borderBottom: '1px solid var(--border)' }
+const th = { ...cell, fontWeight: 700 }
+const td = cell
+
+export default function Standings() {
+  const [league, setLeague] = useState(null)
+  const [teamRows, setTeamRows] = useState([])
+  const [playerGroups, setPlayerGroups] = useState([]) // [{team:{id,name}, players:[...]}]
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancel = false
+    async function load() {
+      try {
+        setLoading(true)
+        const [lgRes, teamRes, pRes] = await Promise.all([
+          fetch('/api/leagues', { headers: getAuthHeaders() }),
+          fetch('/api/standings', { headers: getAuthHeaders() }),
+          fetch('/api/standings/players', { headers: getAuthHeaders() }),
+        ])
+        const leagues = await lgRes.json()
+        const leagueFromToken = leagues[0] || null
+        const teams = await teamRes.json()
+        const pGroups = await pRes.json()
+        if (!cancel) {
+          setLeague(leagueFromToken)
+          setTeamRows(Array.isArray(teams) ? teams : [])
+          setPlayerGroups(Array.isArray(pGroups) ? pGroups : [])
+        }
+      } finally { if (!cancel) setLoading(false) }
+    }
+    load()
+    return () => { cancel = true }
+  }, [])
+
+  // Split player groups into two balanced columns
+  const [leftGroups, rightGroups] = useMemo(() => {
+    const left = [], right = []
+    playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
+    return [left, right]
+  }, [playerGroups])
+
+  return (
+    <div className="card standings-wrap printable" style={{ display:'grid', gap:16 }}>
+      {/* Logo centered */}
+      <header style={{ textAlign:'center', display:'grid', gap:10 }}>
+        {league?.logo ? (
+          <img
+            src={league.logo}
+            alt="League logo"
+            style={{ height: 110, objectFit:'contain', margin:'0 auto' }}
+          />
+        ) : null}
+        {/* space for officers if/when you render them */}
+        {/* <div className="muted" style={{fontSize:14}}>Chair • Vice Chair • Treasurer • Secretary</div> */}
+      </header>
+
+      {/* TEAM STANDINGS (full width) */}
+      <section className="card page-break-avoid">
+        <h3 style={{ marginTop:0 }}>Team Standings</h3>
+        <div style={{ overflowX:'auto' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr>
+                <th style={th}>Pos</th>
+                <th style={th}>Team</th>
+                {/* Match player-style order */}
+                <th style={th}>Pts</th>
+                <th style={th}>PinsS</th>
+                <th style={th}>PinsH</th>
+                <th style={th}>HGS</th>
+                <th style={th}>HGH</th>
+                <th style={th}>HSS</th>
+                <th style={th}>HSH</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teamRows.map(r => (
+                <tr key={r.id}>
+                  <td style={td}>{r.pos}</td>
+                  <td style={td}>{r.name}</td>
+                  <td style={{...td, fontWeight:700}}>{r.won}</td>
+                  <td style={td}>{r.pinss}</td>
+                  <td style={td}>{r.pinsh}</td>
+                  <td style={td}>{r.hgs}</td>
+                  <td style={td}>{r.hgh}</td>
+                  <td style={td}>{r.hss}</td>
+                  <td style={td}>{r.hsh}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* PLAYER STANDINGS (two columns) */}
+      <section className="page-break-avoid">
+        <h3 style={{ marginTop:0 }}>Player Standings</h3>
+
+        <div className="standings-columns">
+          {/* LEFT COLUMN */}
+          <div className="standings-col">
+            {leftGroups.map(group => (
+              <div key={group.team.id} className="card page-break-avoid">
+                <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Player</th>
+                        <th style={th}>Hcp</th>
+                        <th style={th}>Ave</th>
+                        <th style={th}>Gms</th>
+                        <th style={th}>Pts</th>
+                        <th style={th}>PinsS</th>
+                        <th style={th}>PinsH</th>
+                        <th style={th}>HGS</th>
+                        <th style={th}>HGH</th>
+                        <th style={th}>HSS</th>
+                        <th style={th}>HSH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(group.players || []).map(p => (
+                        <tr key={p.player_id}>
+                          <td style={td}>{p.name}</td>
+                          <td style={td}>{p.hcp}</td>
+                          <td style={td}>{p.ave}</td>
+                          <td style={td}>{p.gms}</td>
+                          <td style={{...td, fontWeight:700}}>{p.pts}</td>
+                          <td style={td}>{p.pinss}</td>
+                          <td style={td}>{p.pinsh}</td>
+                          <td style={td}>{p.hgs}</td>
+                          <td style={td}>{p.hgh}</td>
+                          <td style={td}>{p.hss}</td>
+                          <td style={td}>{p.hsh}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <div className="standings-col">
+            {rightGroups.map(group => (
+              <div key={group.team.id} className="card page-break-avoid">
+                <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
+                <div style={{ overflowX:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={th}>Player</th>
+                        <th style={th}>Hcp</th>
+                        <th style={th}>Ave</th>
+                        <th style={th}>Gms</th>
+                        <th style={th}>Pts</th>
+                        <th style={th}>PinsS</th>
+                        <th style={th}>PinsH</th>
+                        <th style={th}>HGS</th>
+                        <th style={th}>HGH</th>
+                        <th style={th}>HSS</th>
+                        <th style={th}>HSH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(group.players || []).map(p => (
+                        <tr key={p.player_id}>
+                          <td style={td}>{p.name}</td>
+                          <td style={td}>{p.hcp}</td>
+                          <td style={td}>{p.ave}</td>
+                          <td style={td}>{p.gms}</td>
+                          <td style={{...td, fontWeight:700}}>{p.pts}</td>
+                          <td style={td}>{p.pinss}</td>
+                          <td style={td}>{p.pinsh}</td>
+                          <td style={td}>{p.hgs}</td>
+                          <td style={td}>{p.hgh}</td>
+                          <td style={td}>{p.hss}</td>
+                          <td style={td}>{p.hsh}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Export (hidden on print) */}
+      <div className="no-print" style={{ display:'flex', justifyContent:'flex-end' }}>
+        <button className="button" onClick={()=>window.print()}>Export PDF</button>
+      </div>
+
+      {loading && <div className="muted">Loading…</div>}
+    </div>
+  )
 }
-:root.dark {
-  --bg: #0b0e14;
-  --fg: #e5e7eb;
-  --card: #131722;
-  --border: #222838;
-  --muted: #9aa3b2;
-  --hover: #182033;
-  --primary: #87a5ff;
-}
-
-html, body, #root { height: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
-}
-
-/* Cards & text */
-.card { border: 1px solid var(--border); background: var(--card); border-radius: 12px; padding: 12px; }
-.muted { color: var(--muted); }
-
-/* Buttons (including nav pills when used as buttons/links) */
-.button {
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: 12px;
-  padding: 10px 14px;
-  font-weight: 600;
-  cursor: pointer;
-
-  /* center content */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-
-  line-height: 1.2;
-  white-space: nowrap;   /* keep labels on one line */
-  min-height: 40px;
-}
-.button.primary { background: #111; color: #fff; border-color: #111; }
-.button.ghost { background: transparent; }
-
-/* Inputs & tables */
-input, select { background: var(--card); color: var(--fg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
-input[type="number"], input[type="text"], select { height: 32px; }
-
-table { width: 100%; border-collapse: collapse; }
-th, td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
-th button { all: unset; cursor: pointer; font-weight: 700; }
-table input { border-radius: 8px; width: 64px; text-align: center; }
-
-/* ---------- HEADER & NAV ---------- */
-
-/* Single-row header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: nowrap;            /* keep everything on one row */
-}
-
-/* League title (use only league name in markup) */
-.header-title {
-  margin: 0;
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Right-side controls (theme toggle, logout, etc.) */
-.header-right {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-  flex: 0 0 auto;
-}
-
-/* Nav container: single row, scroll if overflow */
-.nav {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: nowrap;            /* no wrapping */
-  overflow-x: auto;             /* horizontal scroll on small screens */
-  padding-bottom: 4px;          /* avoid scrollbar overlap on some OS */
-}
-
-/* Nav “pills” (anchors/buttons) with centered content */
-.nav a,
-.nav a.button,
-.nav button,
-.nav button.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-
-  padding: 10px 14px;
-  min-height: 40px;
-  line-height: 1.2;
-  white-space: nowrap;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-  color: var(--fg);
-  text-decoration: none;
-}
-
-/* Hover & active states */
-.nav a:hover,
-.nav button:hover { background: var(--hover); }
-
-.nav a.active,
-.button.active {
-  outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
-/* === CSCoaching Home Branding === */
-:root {
-  --brand-red: #e11d2e;
-  --brand-red-dark: #b31624;
-  --brand-ink: #0b0e14;
-  --brand-ink-2: #151a24;
-  --ring: rgba(225,29,46,0.25);
-}
-
-.home-wrap {
-  display: grid;
-  gap: 16px;
-}
-
-/* HERO */
-.home-hero {
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 16px;
-  padding: 20px;
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  background:
-    radial-gradient(1200px 400px at -10% -20%, rgba(225,29,46,0.08), transparent 60%),
-    radial-gradient(900px 500px at 120% 10%, rgba(225,29,46,0.06), transparent 60%),
-    linear-gradient(180deg, var(--card), var(--card));
-}
-
-.home-hero__left { display: grid; align-content: center; gap: 6px; }
-.home-hero__title {
-  margin: 0;
-  font-size: clamp(24px, 3.2vw, 36px);
-  letter-spacing: 0.3px;
-}
-.home-hero__tag { margin: 0; color: var(--muted); font-size: 15px; }
-
-.home-hero__right { display: grid; place-items: center; }
-.home-hero__logo {
-  max-width: min(360px, 100%);
-  width: 100%;
-  filter: drop-shadow(0 10px 24px rgba(0,0,0,0.2));
-  user-select: none;
-}
-
-/* GRID of cards */
-.home-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-@media (max-width: 980px) {
-  .home-hero { grid-template-columns: 1fr; }
-  .home-grid { grid-template-columns: 1fr; }
-}
-
-/* Cards */
-.home-card { border-radius: 14px; }
-.home-card__title { margin: 4px 0 4px; font-size: 18px; }
-.home-card__hint { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
-
-.home-form { display: grid; gap: 8px; }
-
-/* Actions row */
-.home-actions { display: flex; gap: 10px; justify-content: flex-end; }
-
-/* Brand button */
-.brand-btn {
-  appearance: none;
-  border: 1px solid var(--brand-red);
-  background: var(--brand-red);
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform .06s ease, box-shadow .15s ease, background .2s ease;
-  box-shadow: 0 6px 20px rgba(225,29,46,0.22);
-}
-.brand-btn:hover { background: var(--brand-red-dark); }
-.brand-btn:active { transform: translateY(1px); }
-.brand-btn:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
-
-.brand-btn--ghost {
-  background: transparent;
-  color: var(--brand-red);
-  box-shadow: none;
-}
-.brand-btn--ghost:hover { background: rgba(225,29,46,0.06); }
-
-/* Error */
-.home-error {
-  border: 1px solid rgba(225,29,46,0.3);
-  background: rgba(225,29,46,0.06);
-  color: var(--brand-red-dark);
-  border-radius: 12px;
-  padding: 10px 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* optional: hide any theme toggle chip/button */
-.theme-toggle,
-button[aria-label="Toggle theme"],
-button:has(> :where(.theme-icon)) {
-  display: none !important;
-}
-/* Two-column layout for the Standings content area */
-.two-col {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-.two-col .column { break-inside: avoid; }
-
-/* Print styles for A4 PDF */
-@media print {
-  @page { size: A4 portrait; margin: 12mm; }
-
-  /* Remove non-print controls */
-  .no-print { display: none !important; }
-
-  /* Make the printable card fill the page width */
-  .printable {
-    box-shadow: none !important;
-    border: none !important;
-    padding: 0 !important;
-  }
-
-  /* Ensure 2 columns on print */
-  .two-col {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 10mm !important;
-  }
-
-  /* Slightly smaller fonts for print density */
-  table, th, td { font-size: 11px; }
-  h2 { font-size: 20px; }
-  h3 { font-size: 14px; }
-}
-/* Two-column grid for player standings */
-.standings-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-/* Prevent tables from splitting across printed pages awkwardly */
-.page-break-avoid {
-  break-inside: avoid;
-}
-
-/* Print tweaks for A4 export — keeps two columns and reduces margins */
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 10mm;
-  }
-  body {
-    background: #fff !important;
-  }
-  .card {
-    box-shadow: none !important;
-  }
-  .standings-columns {
-    gap: 12px;
-  }
-}
-/* Keep inner cards neatly inside the main card */
-.standings-wrap {
-  display: grid;
-  gap: 16px;
-}
-
-.standings-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-/* Ensure the inner cards don’t “bulge” past the parent padding */
-.standings-columns > .standings-col > .card,
-.standings-columns > .standings-col {
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.card {
-  overflow: hidden; /* prevents subtle 1–2px overflow from tables */
-}
-
-/* Prevent printed page breaks inside tables/cards */
-.page-break-avoid {
-  break-inside: avoid;
-}
-
-/* Print: keep it tidy on A4 */
-@media print {
-  @page { size: A4 portrait; margin: 10mm; }
-  body { background: #fff !important; }
-  .card { box-shadow: none !important; }
-  .standings-columns { gap: 12px; }
-}
-
