@@ -150,7 +150,7 @@ export default function Standings() {
                       <tr>
                         <th style={th}>Player</th>
                         <th style={th}>Hcp</th>
-                        <th style={th}}>Ave</th>
+                        <th style={th}>Ave</th>
                         <th style={th}>Gms</th>
                         <th style={th}>Pts</th>
                         <th style={th}>PinsH</th>
