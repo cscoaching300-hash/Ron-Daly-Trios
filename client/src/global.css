@@ -385,5 +385,45 @@ button:has(> :where(.theme-icon)) {
   .standings-wrap th, .standings-wrap td { border-color: #000; }
   .card { box-shadow: none !important; }
 }
+/* Keep the standings layout inside the outer card and prevent right-edge clipping */
+.standings-wrap { overflow-x: hidden; }
+
+/* Allow each column to shrink even if there's a wide table inside */
+.standings-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); /* key fix */
+  gap: 16px;
+}
+
+/* Let card containers shrink inside the grid */
+.standings-columns > .standings-col,
+.standings-columns .card {
+  min-width: 0; /* important for overflow handling */
+}
+
+/* Each table already sits in a div with overflow-x:auto in JSX,
+   but this ensures scroll instead of pushing layout wider */
+.standings-wrap .card > div[style*="overflow-x"] {
+  overflow-x: auto !important;
+}
+
+/* Make sure the export button area never gets clipped */
+.standings-wrap .no-print {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  overflow: visible;
+}
+
+/* Gentle tightening when space is limited */
+@media (max-width: 1200px) {
+  .standings-wrap table { font-size: 14px; }
+  .standings-wrap th, .standings-wrap td { padding: 6px 8px; }
+}
+
+/* Single column on narrow screens (keeps everything inside) */
+@media (max-width: 980px) {
+  .standings-columns { grid-template-columns: 1fr; }
+}
 
 
