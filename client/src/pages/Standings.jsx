@@ -31,13 +31,15 @@ export default function Standings() {
           setTeamRows(Array.isArray(teams) ? teams : [])
           setPlayerGroups(Array.isArray(pGroups) ? pGroups : [])
         }
-      } finally { if (!cancel) setLoading(false) }
+      } finally {
+        if (!cancel) setLoading(false)
+      }
     }
     load()
     return () => { cancel = true }
   }, [])
 
-  // Split player groups into two balanced columns
+  // Split groups into two columns (balanced by index)
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
@@ -46,8 +48,8 @@ export default function Standings() {
 
   return (
     <div className="card" style={{ display:'grid', gap:16 }}>
-      {/* Brand header block: logo centered + officials (if you already added these) */}
-      <header style={{ textAlign:'center', display:'grid', gap:10 }}>
+      {/* Logo centered */}
+      <header style={{ textAlign:'center' }}>
         {league?.logo ? (
           <img
             src={league.logo}
@@ -55,11 +57,9 @@ export default function Standings() {
             style={{ height: 110, objectFit:'contain', margin:'0 auto' }}
           />
         ) : null}
-        {/* If you’re rendering officials, keep that block here */}
-        {/* <div className="muted" style={{fontSize:14}}>Chairperson …</div> */}
       </header>
 
-      {/* === TEAM STANDINGS stays full width right under the logo === */}
+      {/* TEAM STANDINGS */}
       <section className="card">
         <h3 style={{ marginTop:0 }}>Team Standings</h3>
         <div style={{ overflowX:'auto' }}>
@@ -68,7 +68,6 @@ export default function Standings() {
               <tr>
                 <th style={th}>Pos</th>
                 <th style={th}>Team</th>
-                {/* Order mirrors player-style stats */}
                 <th style={th}>Pts</th>
                 <th style={th}>PinsS</th>
                 <th style={th}>PinsH</th>
@@ -97,15 +96,21 @@ export default function Standings() {
         </div>
       </section>
 
-      {/* === PLAYER STANDINGS in 2 columns under team standings === */}
+      {/* PLAYER STANDINGS — TWO COLUMNS */}
       <section>
         <h3 style={{ marginTop:0 }}>Player Standings</h3>
 
-        <div className="standings-columns">
-          {/* LEFT COLUMN */}
-          <div className="standings-col">
+        <div
+          style={{
+            display:'grid',
+            gridTemplateColumns:'1fr 1fr',
+            gap:16,
+          }}
+        >
+          {/* LEFT */}
+          <div>
             {leftGroups.map(group => (
-              <div key={group.team.id} className="card page-break-avoid">
+              <section key={group.team.id} className="card" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -143,14 +148,14 @@ export default function Standings() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             ))}
           </div>
 
-          {/* RIGHT COLUMN */}
-          <div className="standings-col">
+          {/* RIGHT */}
+          <div>
             {rightGroups.map(group => (
-              <div key={group.team.id} className="card page-break-avoid">
+              <section key={group.team.id} className="card" style={{ overflow:'hidden' }}>
                 <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
                 <div style={{ overflowX:'auto' }}>
                   <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -188,15 +193,15 @@ export default function Standings() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Optional: quick export */}
+      {/* Export */}
       <div style={{ display:'flex', justifyContent:'flex-end' }}>
-        <button className="button" onClick={()=>window.print()}>Export PDF</button>
+        <button className="button" onClick={() => window.print()}>Export PDF</button>
       </div>
 
       {loading && <div className="muted">Loading…</div>}
