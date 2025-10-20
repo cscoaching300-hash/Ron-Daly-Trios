@@ -458,3 +458,31 @@ button:has(> :where(.theme-icon)) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* --- Standings: rebalance widths to stop header overlap --- */
+
+/* Make the Player column a bit narrower so stats get more room */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  width: 20ch;                /* was ~24–28ch; this frees space for the stats */
+}
+
+/* Reserve a minimum width per stat column and center them */
+.standings-wrap thead th:not(:first-child),
+.standings-wrap tbody td:not(:first-child) {
+  min-width: 3.4rem;          /* tiny buffer so labels like PinsH/PinsS don't touch */
+  text-align: center;
+}
+
+/* Slight typographic nudge so short headers breathe without changing size */
+.standings-wrap thead th:not(:first-child) {
+  letter-spacing: .15px;
+  line-height: 1.15;
+}
+
+/* Print keeps the same balance */
+@media print {
+  .standings-wrap table thead th:first-child,
+  .standings-wrap table tbody td:first-child { width: 20ch; }
+  .standings-wrap thead th:not(:first-child),
+  .standings-wrap tbody td:not(:first-child) { min-width: 3.4rem; }
+}
