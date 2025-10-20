@@ -568,3 +568,59 @@ button:has(> :where(.theme-icon)) {
     white-space: nowrap;
   }
 }
+/* --- Standings: give PinsS / PinsH a bit more width --- */
+
+/* Trim Player column slightly to free space */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  width: 17ch;  /* was ~18–19ch; just a small shave */
+}
+
+/* Player tables (11 columns): PinsS = 6th, PinsH = 7th */
+.standings-wrap table thead th:nth-child(6),
+.standings-wrap table tbody td:nth-child(6),
+.standings-wrap table thead th:nth-child(7),
+.standings-wrap table tbody td:nth-child(7) {
+  min-width: 4.6rem;   /* just enough so labels never clip */
+}
+
+/* Team table is the first table under .standings-wrap:
+   PinsS = 5th, PinsH = 6th */
+.standings-wrap > section.card:first-of-type table thead th:nth-child(5),
+.standings-wrap > section.card:first-of-type table tbody td:nth-child(5),
+.standings-wrap > section.card:first-of-type table thead th:nth-child(6),
+.standings-wrap > section.card:first-of-type table tbody td:nth-child(6) {
+  min-width: 4.6rem;
+}
+
+/* Keep header labels readable and centered (no clipping) */
+.standings-wrap thead th {
+  text-align: center;
+  white-space: normal;
+  line-height: 1.15;
+  font-size: 12.5px;
+  padding: 5px 6px;
+}
+
+/* Keep numeric body cells tight, single-line, centered */
+.standings-wrap tbody td:not(:first-child) {
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Print: preserve the extra space for PinsS/PinsH */
+@media print {
+  .standings-wrap table thead th:nth-child(6),
+  .standings-wrap table tbody td:nth-child(6),
+  .standings-wrap table thead th:nth-child(7),
+  .standings-wrap table tbody td:nth-child(7),
+  .standings-wrap > section.card:first-of-type table thead th:nth-child(5),
+  .standings-wrap > section.card:first-of-type table tbody td:nth-child(5),
+  .standings-wrap > section.card:first-of-type table thead th:nth-child(6),
+  .standings-wrap > section.card:first-of-type table tbody td:nth-child(6) {
+    min-width: 4.6rem;
+  }
+}
