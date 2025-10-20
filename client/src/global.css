@@ -526,3 +526,45 @@ button:has(> :where(.theme-icon)) {
     min-width: 3.5rem;
   }
 }
+/* --- Standings: readable headers, tight numbers --- */
+
+/* Give a hair more space to stats by trimming Player column slightly */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  width: 18ch; /* was 19–20ch */
+}
+
+/* HEADERS (stats columns): allow wrapping so labels are fully visible */
+.standings-wrap thead th:not(:first-child) {
+  text-align: center;
+  white-space: normal;     /* allow 1–2 lines */
+  overflow: visible;       /* show all letters */
+  text-overflow: clip;
+  line-height: 1.15;
+  font-size: 12.5px;       /* compact but readable */
+  padding: 5px 6px;
+  min-width: 3.6rem;       /* tiny floor so HGS/HGH/HSS/HSH fit */
+}
+
+/* BODY CELLS (stats): stay on one line and centered */
+.standings-wrap tbody td:not(:first-child) {
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;        /* numbers never spill */
+  text-overflow: ellipsis; /* just in case */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Print keeps the same behavior */
+@media print {
+  .standings-wrap thead th:not(:first-child) {
+    white-space: normal;
+    overflow: visible;
+    min-width: 3.6rem;
+    font-size: 10.5px;
+    line-height: 1.1;
+  }
+  .standings-wrap tbody td:not(:first-child) {
+    white-space: nowrap;
+  }
+}
