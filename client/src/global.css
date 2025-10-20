@@ -337,142 +337,100 @@ button:has(> :where(.theme-icon)) {
   .standings-columns { gap: 12px; }
 }
 
-/* ===== Standings page polish ===== */
+/* ===== Standings page polish (clean) ===== */
 
-/* Give every table on the standings page a full box + inner grid lines */
+/* Layout container */
+.standings-wrap {
+  display: grid;
+  gap: 16px;
+  overflow-x: visible; /* never clip or introduce inner scrollbars */
+}
+
+/* Two equal columns that can shrink without pushing outside */
+.standings-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.standings-columns > .standings-col,
+.standings-columns .card { min-width: 0; }
+
+/* Keep inner cards tidy */
+.page-break-avoid { break-inside: avoid; }
+.standings-wrap .card { overflow: hidden; }
+
+/* Remove any inline overflow-x:auto the JSX may inject */
+.standings-wrap .card > div[style*="overflow-x"] { overflow-x: visible !important; }
+
+/* Tables: full grid + fixed layout so columns always fit */
 .standings-wrap table {
-  border: 1px solid var(--border);
-  border-collapse: collapse; /* keep crisp grid lines */
   width: 100%;
+  border: 1px solid var(--border);
+  border-collapse: collapse;
+  table-layout: fixed;                /* distribute width across all columns */
+  font-variant-numeric: tabular-nums; /* lined-up numbers */
+}
+.standings-wrap thead th,
+.standings-wrap tbody td {
+  border: 1px solid var(--border);
+  padding: 6px 8px;                   /* compact */
+  white-space: nowrap;                /* keep numeric cols on one line */
+  font-size: 13px;
 }
 
-.standings-wrap th,
-.standings-wrap td {
-  border: 1px solid var(--border); /* inner grid */
-}
-
-/* Keep tables nicely contained inside their cards */
-.standings-wrap .card {
-  overflow: hidden;
-}
-
-/* Table headers: subtle background and bold text */
+/* Header background */
 .standings-wrap thead th {
   background: var(--hover);
   font-weight: 700;
 }
 
-/* Zebra striping for body rows */
+/* Zebra rows */
 .standings-wrap tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--hover) 70%, transparent);
 }
 
-/* Tighten vertical rhythm a touch on standings tables */
-.standings-wrap th,
-.standings-wrap td {
-  padding: 8px 10px;
+/* Player column: allow wrapping/ellipsis so names never overlap next column */
+.standings-wrap table thead th:first-child,
+.standings-wrap table tbody td:first-child {
+  white-space: normal;
+  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 24ch;
 }
 
-/* Optional utility: right-align numeric columns with tabular figures */
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+/* Slightly wider Player column on larger screens */
+@media (min-width: 1280px) {
+  .standings-wrap table thead th:first-child,
+  .standings-wrap table tbody td:first-child {
+    width: 28ch;
+  }
 }
 
-/* Print keeps the grid and removes card shadow/extra styling */
-@media print {
-  .standings-wrap table { border-color: #000; } /* darker for print */
-  .standings-wrap th, .standings-wrap td { border-color: #000; }
-  .card { box-shadow: none !important; }
+/* Tighter on smaller widths (keeps everything visible without scrollbars) */
+@media (max-width: 1280px) {
+  .standings-wrap thead th,
+  .standings-wrap tbody td { padding: 5px 7px; font-size: 12px; }
 }
-/* Keep the standings layout inside the outer card and prevent right-edge clipping */
-.standings-wrap { overflow-x: hidden; }
-
-/* Allow each column to shrink even if there's a wide table inside */
-.standings-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); /* key fix */
-  gap: 16px;
+@media (max-width: 1100px) {
+  .standings-wrap thead th,
+  .standings-wrap tbody td { padding: 4px 6px; font-size: 11.5px; }
 }
-
-/* Let card containers shrink inside the grid */
-.standings-columns > .standings-col,
-.standings-columns .card {
-  min-width: 0; /* important for overflow handling */
-}
-
-/* Each table already sits in a div with overflow-x:auto in JSX,
-   but this ensures scroll instead of pushing layout wider */
-.standings-wrap .card > div[style*="overflow-x"] {
-  overflow-x: auto !important;
-}
-
-/* Make sure the export button area never gets clipped */
-.standings-wrap .no-print {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: 8px;
-  overflow: visible;
-}
-
-/* Gentle tightening when space is limited */
-@media (max-width: 1200px) {
-  .standings-wrap table { font-size: 14px; }
-  .standings-wrap th, .standings-wrap td { padding: 6px 8px; }
-}
-
-/* Single column on narrow screens (keeps everything inside) */
+/* Single column when very narrow */
 @media (max-width: 980px) {
   .standings-columns { grid-template-columns: 1fr; }
 }
 
-/* --- Standings: show all columns, no inner scrollbars --- */
-
-/* Remove the inner horizontal scrollbars created by inline styles in JSX */
-.standings-wrap .card > div[style*="overflow-x"] {
-  overflow-x: visible !important;
-}
-
-/* Make columns share width evenly and keep numbers tight */
-.standings-wrap table {
-  table-layout: fixed;      /* distribute column width */
-  width: 100%;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Keep everything on one line, tighten spacing a bit */
-.standings-wrap th,
-.standings-wrap td {
-  white-space: nowrap;
-  padding: 6px 8px;         /* tighter than default */
-  font-size: 13px;          /* slightly smaller for more columns */
-}
-
-/* Slightly lighter headers so dense tables stay readable */
-.standings-wrap thead th {
-  background: var(--hover);
-  font-weight: 700;
-}
-
-/* If space is tight, shrink a bit more so we stay scrollbar-free */
-@media (max-width: 1280px) {
-  .standings-wrap th,
-  .standings-wrap td { padding: 5px 7px; font-size: 12px; }
-}
-@media (max-width: 1100px) {
-  .standings-wrap th,
-  .standings-wrap td { padding: 4px 6px; font-size: 11.5px; }
-}
-
-/* Print: fit to A4 cleanly, no scrollbars, tighter grid */
+/* Print: fit cleanly on A4, no shadows or scrollbars, small but readable text */
 @media print {
   @page { size: A4 portrait; margin: 10mm; }
+  body { background: #fff !important; }
+  .card { box-shadow: none !important; }
   .standings-wrap .card > div[style*="overflow-x"] { overflow: visible !important; }
   .standings-wrap table { table-layout: fixed; }
+  .standings-wrap thead th,
+  .standings-wrap tbody td { padding: 4px 5px; font-size: 10px; }
+  .standings-wrap table,
   .standings-wrap th,
-  .standings-wrap td { padding: 4px 5px; font-size: 10px; }
-  .card { box-shadow: none !important; }
+  .standings-wrap td { border-color: #000; } /* darker lines for print */
 }
-
-
-
