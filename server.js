@@ -129,7 +129,6 @@ function normalizeLeague(league) {
 }
 
 /* ===== Freeze helpers ===== */
-/* ===== Freeze helpers ===== */
 function freezeWindow(league) {
   const start = +league.hcpLockFromWeek || 0;
   const len   = +league.hcpLockWeeks || 0;
@@ -143,12 +142,19 @@ function inFreeze(league, weekNumber) {
   return len > 0 && Number.isFinite(+weekNumber) && +weekNumber >= start && +weekNumber <= end;
 }
 
-
-/* ===== What week should we show if none specified?
-   Use the latest *entered* week so default views respect freeze when applicable. */
+/* ===== Latest entered helpers ===== */
 function latestEnteredWeek(leagueId) {
   const weeks = (db.data.sheets || [])
     .filter(s => s && s.league_id === leagueId)
+    .map(s => +s.week_number)
+    .filter(Number.isFinite);
+  return weeks.length ? Math.max(...weeks) : 0;
+}
+/* Team-specific latest entered week (either as home or away) */
+function latestEnteredWeekForTeam(leagueId, teamId) {
+  if (!teamId) return 0;
+  const weeks = (db.data.sheets || [])
+    .filter(s => s && s.league_id === leagueId && (s.homeTeamId === teamId || s.awayTeamId === teamId))
     .map(s => +s.week_number)
     .filter(Number.isFinite);
   return weeks.length ? Math.max(...weeks) : 0;
@@ -448,7 +454,7 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
   if (up.handicapCapAdult !== undefined)  league.handicapCapAdult  = Math.max(0, +up.handicapCapAdult || 0);
   if (up.handicapCapJunior !== undefined) league.handicapCapJunior = Math.max(0, +up.handicapCapJunior || 0);
   
-// Update officials (merge)
+  // Update officials (merge)
   if (up.officials && typeof up.officials === 'object') {
     league.officials = {
       ...(league.officials || { chair:'', viceChair:'', treasurer:'', secretary:'' }),
@@ -458,7 +464,6 @@ app.put('/api/leagues/:id', requireAuth, (req, res) => {
       secretary: up.officials.secretary !== undefined ? String(up.officials.secretary) : (league.officials?.secretary || ''),
     };
   }
-
 
   db.write();
   res.json({ ok: true, league: normalizeLeague(league) });
@@ -627,8 +632,7 @@ app.get('/api/matches', (req, res) => {
   res.json(rows);
 });
 
-/* ===== Match Sheet (mirrors Players/Standings HCP outside freeze, and
-        stays frozen while entering a week until it's actually saved) ===== */
+/* ===== Match Sheet (team-specific freeze during entry) ===== */
 app.get('/api/match-sheet', (req, res) => {
   db.read();
 
@@ -641,14 +645,18 @@ app.get('/api/match-sheet', (req, res) => {
   const league = normalizeLeague(leagueRaw);
   if (!league) return res.status(400).json({ error: 'league not found' });
 
-  // Key change: while entering a week, keep display in the same "freeze week"
-  // as Players/Standings. This prevents showing calculated HCP during the
-  // freeze for players who haven't bowled that week yet.
-  const latest = latestEnteredWeek(leagueId);               // e.g. 2 if week 3 not saved yet
-  const displayWeek = Math.min(weekNumber || 0, latest || 0); // use min to mirror listing pages
+  // Determine per-team default "display week" to respect team-specific freeze while entering scores.
+  const latestGlobal = latestEnteredWeek(leagueId);
+  const latestHome   = latestEnteredWeekForTeam(leagueId, homeTeamId) || 0;
+  const latestAway   = latestEnteredWeekForTeam(leagueId, awayTeamId) || 0;
 
-  // Build stats up to displayWeek (not the requested week if it isn’t saved yet)
-  const statsForWeek = computePlayerStatsForLeague(league, displayWeek);
+  // Each side freezes up to the min(requested week, that team's latest entered week)
+  const displayWeekHome = Math.min(weekNumber || 0, latestHome || 0, latestGlobal || 0);
+  const displayWeekAway = Math.min(weekNumber || 0, latestAway || 0, latestGlobal || 0);
+
+  // Build stats up to the respective display weeks
+  const statsForHome = computePlayerStatsForLeague(league, displayWeekHome);
+  const statsForAway = computePlayerStatsForLeague(league, displayWeekAway);
 
   const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
   const home    = teams.find(t => t.id === homeTeamId) || null;
@@ -658,19 +666,17 @@ app.get('/api/match-sheet', (req, res) => {
 
   const rosterIdsFor = (teamId) => new Set(tps.filter(tp => tp.team_id === teamId).map(tp => tp.player_id));
 
-  const shape = (p) => {
-    const st = statsForWeek.get(p.id);
+  const shapeFor = (statsMap, displayWeek) => (p) => {
+    const st = statsMap.get(p.id);
     const statAve  = st && Number.isFinite(+st.ave) ? +st.ave : 0;
     const fallback = Number.isFinite(+p.average) ? +p.average : (Number.isFinite(+p.start_average) ? +p.start_average : 0);
     const effAvg   = statAve > 0 ? statAve : fallback;
-
     return {
       id: p.id,
       name: p.name,
       average: effAvg,
       gender: p.gender || null,
       junior: !!p.junior,
-      // Use displayWeek for freeze-aware handicap display
       hcp: hcpDisplayForList(league, displayWeek, p, effAvg)
     };
   };
@@ -678,11 +684,12 @@ app.get('/api/match-sheet', (req, res) => {
   const homeRosterIds = home ? rosterIdsFor(home.id) : new Set();
   const awayRosterIds = away ? rosterIdsFor(away.id) : new Set();
 
-  const homeRoster = home ? players.filter(p => homeRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name)) : [];
-  const awayRoster = away ? players.filter(p => awayRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name)) : [];
+  // Important: subs for a side also use that side's display week so entry stays frozen for that side
+  const homeRoster = home ? players.filter(p => homeRosterIds.has(p.id)).map(shapeFor(statsForHome, displayWeekHome)).sort((a,b)=>a.name.localeCompare(b.name)) : [];
+  const awayRoster = away ? players.filter(p => awayRosterIds.has(p.id)).map(shapeFor(statsForAway, displayWeekAway)).sort((a,b)=>a.name.localeCompare(b.name)) : [];
 
-  const homeSubs = players.filter(p => !homeRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
-  const awaySubs = players.filter(p => !awayRosterIds.has(p.id)).map(shape).sort((a,b)=>a.name.localeCompare(b.name));
+  const homeSubs = players.filter(p => !homeRosterIds.has(p.id)).map(shapeFor(statsForHome, displayWeekHome)).sort((a,b)=>a.name.localeCompare(b.name));
+  const awaySubs = players.filter(p => !awayRosterIds.has(p.id)).map(shapeFor(statsForAway, displayWeekAway)).sort((a,b)=>a.name.localeCompare(b.name));
 
   res.json({
     league: {
@@ -705,7 +712,6 @@ app.get('/api/match-sheet', (req, res) => {
     homeRoster, awayRoster, homeSubs, awaySubs
   });
 });
-
 
 /* ===== Utility used by POST /api/match-sheet when client doesn't send totals ===== */
 function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, useHandicap) {
@@ -1200,3 +1206,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
+
