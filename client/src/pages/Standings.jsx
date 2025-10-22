@@ -5,15 +5,13 @@ import { getAuthHeaders } from '../lib/auth.js'
 const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
 const th = { ...baseCell, fontWeight: 700 }
 const td = baseCell
-
-// numeric alignment helper
 const thNum = { ...th, textAlign: 'right' }
 const tdNum = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }
 
 export default function Standings() {
   const [league, setLeague] = useState(null)
   const [teamRows, setTeamRows] = useState([])
-  const [playerGroups, setPlayerGroups] = useState([]) // [{team:{id,name}, players:[...]}]
+  const [playerGroups, setPlayerGroups] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -43,7 +41,6 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
-  // split teams into two columns
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
@@ -52,7 +49,6 @@ export default function Standings() {
 
   return (
     <>
-      {/* PRINT + layout styles */}
       <style>{`
         .standings-columns {
           display: grid;
@@ -62,71 +58,59 @@ export default function Standings() {
         .standings-col { min-width: 0; }
 
         @media print {
-          /* Hide everything but the print root */
           body * { visibility: hidden !important; }
           #print-root, #print-root * { visibility: visible !important; }
 
           #print-root {
-            position: absolute;
-            inset: 0;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            position: absolute; inset: 0;
+            width: 100% !important; margin: 0 !important; padding: 0 !important;
           }
-
           @page { size: A4; margin: 6mm; }
+          #print-root { zoom: 0.86; } /* tweak 0.82–0.88 if you need a tiny nudge */
 
-          /* Fit exactly one page in portrait (Chrome/Edge) */
-          #print-root { zoom: 0.86; } /* tweak 0.80–0.90 if needed */
-
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
 
-          /* Compact the cards/tables */
-          #print-root .card {
-            box-shadow: none !important;
-            border: 1px solid #ddd !important;
-          }
-
+          #print-root .card { box-shadow: none !important; border: 1px solid #ddd !important; }
           #print-root header { margin-bottom: 4mm !important; }
-
           #print-root h3 { margin: 4px 0 6px !important; font-size: 14px !important; }
           #print-root h4 { margin: 3px 0 6px !important; font-size: 12px !important; }
 
-          /* Let the browser size columns naturally so headers/numbers aren't truncated */
+          /* Tables: no clipping, but keep columns usable */
           #print-root table {
             width: 100% !important;
             border-collapse: collapse !important;
-            table-layout: auto !important;      /* <-- important: no fixed layout */
+            table-layout: auto !important;
             page-break-inside: avoid !important;
           }
-
-          #print-root th,
-          #print-root td {
+          #print-root th, #print-root td {
             padding: 3px 4px !important;
-            font-size: 9.6px !important;        /* tighter text for portrait */
+            font-size: 10px !important;
             border-bottom: 1px solid #eee !important;
-            white-space: normal !important;      /* allow wrapping as needed */
+            white-space: nowrap !important;      /* default: keep headers/numbers on one line */
             overflow: visible !important;
             text-overflow: clip !important;
           }
 
-          /* Keep numeric columns from wrapping weirdly */
-          #print-root td[data-num="1"],
-          #print-root th[data-num="1"] {
-            white-space: nowrap !important;
+          /* First column (Player): allow normal wrapping, give it a sensible width */
+          #print-root th.col-name, #print-root td.col-name {
+            white-space: normal !important;
+            word-break: keep-all !important;     /* wrap only at spaces/hyphens */
+            min-width: 110px !important;
+            max-width: 180px !important;
           }
 
-          /* Avoid splitting team blocks across pages */
-          #print-root .page-break-avoid { page-break-inside: avoid !important; }
+          /* Numeric columns: ensure they don't collapse and never wrap per-character */
+          #print-root th[data-num="1"], #print-root td[data-num="1"] {
+            min-width: 34px !important;          /* Hcp/Ave/Gms/Pts/HGS etc. */
+            text-align: right !important;
+            font-variant-numeric: tabular-nums;
+          }
+
+          .page-break-avoid { page-break-inside: avoid !important; }
         }
       `}</style>
 
-      {/* >>> only this renders to PDF <<< */}
       <div id="print-root" className="card standings-wrap printable" style={{ display:'grid', gap:12 }}>
         {/* Logo */}
         <header style={{ textAlign:'center', display:'grid', gap:6 }}>
@@ -142,31 +126,31 @@ export default function Standings() {
             <table>
               <thead>
                 <tr>
-                  <th>Pos</th>
-                  <th>Team</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>Gms</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>Pts</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>PinsS</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>PinsH</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>HGS</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>HGH</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>HSS</th>
-                  <th data-num="1" style={{ textAlign:'right' }}>HSH</th>
+                  <th className="col-name">Pos</th>
+                  <th className="col-name">Team</th>
+                  <th data-num="1">Gms</th>
+                  <th data-num="1">Pts</th>
+                  <th data-num="1">PinsS</th>
+                  <th data-num="1">PinsH</th>
+                  <th data-num="1">HGS</th>
+                  <th data-num="1">HGH</th>
+                  <th data-num="1">HSS</th>
+                  <th data-num="1">HSH</th>
                 </tr>
               </thead>
               <tbody>
                 {teamRows.map(r => (
                   <tr key={r.id}>
-                    <td>{r.pos}</td>
-                    <td>{r.name}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.gms ?? r.games ?? 0}</td>
-                    <td data-num="1" style={{ textAlign:'right', fontWeight:700 }}>{r.won}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.pinss}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.pinsh}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.hgs}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.hgh}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.hss}</td>
-                    <td data-num="1" style={{ textAlign:'right' }}>{r.hsh}</td>
+                    <td className="col-name">{r.pos}</td>
+                    <td className="col-name">{r.name}</td>
+                    <td data-num="1">{r.gms ?? r.games ?? 0}</td>
+                    <td data-num="1" style={{ fontWeight:700 }}>{r.won}</td>
+                    <td data-num="1">{r.pinss}</td>
+                    <td data-num="1">{r.pinsh}</td>
+                    <td data-num="1">{r.hgs}</td>
+                    <td data-num="1">{r.hgh}</td>
+                    <td data-num="1">{r.hss}</td>
+                    <td data-num="1">{r.hsh}</td>
                   </tr>
                 ))}
               </tbody>
@@ -179,7 +163,7 @@ export default function Standings() {
           <h3 style={{ marginTop:0 }}>Player Standings</h3>
 
           <div className="standings-columns">
-            {/* Left column */}
+            {/* Left */}
             <div className="standings-col">
               {leftGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
@@ -188,33 +172,33 @@ export default function Standings() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Player</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Hcp</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Ave</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Gms</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Pts</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>PinsS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>PinsH</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HGS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HGH</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HSS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HSH</th>
+                          <th className="col-name">Player</th>
+                          <th data-num="1">Hcp</th>
+                          <th data-num="1">Ave</th>
+                          <th data-num="1">Gms</th>
+                          <th data-num="1">Pts</th>
+                          <th data-num="1">PinsS</th>
+                          <th data-num="1">PinsH</th>
+                          <th data-num="1">HGS</th>
+                          <th data-num="1">HGH</th>
+                          <th data-num="1">HSS</th>
+                          <th data-num="1">HSH</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(group.players || []).map(p => (
                           <tr key={p.player_id}>
-                            <td>{p.name}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hcp}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.ave}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.gms}</td>
-                            <td data-num="1" style={{ textAlign:'right', fontWeight:700 }}>{p.pts}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.pinss}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.pinsh}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hgs}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hgh}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hss}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hsh}</td>
+                            <td className="col-name">{p.name}</td>
+                            <td data-num="1">{p.hcp}</td>
+                            <td data-num="1">{p.ave}</td>
+                            <td data-num="1">{p.gms}</td>
+                            <td data-num="1" style={{ fontWeight:700 }}>{p.pts}</td>
+                            <td data-num="1">{p.pinss}</td>
+                            <td data-num="1">{p.pinsh}</td>
+                            <td data-num="1">{p.hgs}</td>
+                            <td data-num="1">{p.hgh}</td>
+                            <td data-num="1">{p.hss}</td>
+                            <td data-num="1">{p.hsh}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -224,7 +208,7 @@ export default function Standings() {
               ))}
             </div>
 
-            {/* Right column */}
+            {/* Right */}
             <div className="standings-col">
               {rightGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
@@ -233,33 +217,33 @@ export default function Standings() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Player</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Hcp</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Ave</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Gms</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>Pts</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>PinsS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>PinsH</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HGS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HGH</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HSS</th>
-                          <th data-num="1" style={{ textAlign:'right' }}>HSH</th>
+                          <th className="col-name">Player</th>
+                          <th data-num="1">Hcp</th>
+                          <th data-num="1">Ave</th>
+                          <th data-num="1">Gms</th>
+                          <th data-num="1">Pts</th>
+                          <th data-num="1">PinsS</th>
+                          <th data-num="1">PinsH</th>
+                          <th data-num="1">HGS</th>
+                          <th data-num="1">HGH</th>
+                          <th data-num="1">HSS</th>
+                          <th data-num="1">HSH</th>
                         </tr>
                       </thead>
                       <tbody>
                         {(group.players || []).map(p => (
                           <tr key={p.player_id}>
-                            <td>{p.name}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hcp}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.ave}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.gms}</td>
-                            <td data-num="1" style={{ textAlign:'right', fontWeight:700 }}>{p.pts}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.pinss}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.pinsh}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hgs}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hgh}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hss}</td>
-                            <td data-num="1" style={{ textAlign:'right' }}>{p.hsh}</td>
+                            <td className="col-name">{p.name}</td>
+                            <td data-num="1">{p.hcp}</td>
+                            <td data-num="1">{p.ave}</td>
+                            <td data-num="1">{p.gms}</td>
+                            <td data-num="1" style={{ fontWeight:700 }}>{p.pts}</td>
+                            <td data-num="1">{p.pinss}</td>
+                            <td data-num="1">{p.pinsh}</td>
+                            <td data-num="1">{p.hgs}</td>
+                            <td data-num="1">{p.hgh}</td>
+                            <td data-num="1">{p.hss}</td>
+                            <td data-num="1">{p.hsh}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -271,7 +255,6 @@ export default function Standings() {
           </div>
         </section>
 
-        {/* Export (won't print) */}
         <div className="no-print" style={{ display:'flex', justifyContent:'flex-end', padding:'6px 0 2px' }}>
           <button className="button" onClick={() => window.print()}>Export PDF</button>
         </div>
