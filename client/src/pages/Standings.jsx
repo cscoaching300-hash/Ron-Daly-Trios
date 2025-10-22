@@ -66,15 +66,16 @@ export default function Standings() {
             width: 100% !important; margin: 0 !important; padding: 0 !important;
           }
           @page { size: A4; margin: 6mm; }
-          /* small nudge so nothing clips on the right edge */
-          #print-root { zoom: 0.84; }
+
+          /* Slightly smaller overall print scaling */
+          #print-root { zoom: 0.82; }
 
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
 
           #print-root .card { box-shadow: none !important; border: 1px solid #ddd !important; }
           #print-root header { margin-bottom: 4mm !important; }
-          #print-root h3 { margin: 4px 0 6px !important; font-size: 14px !important; }
+          #print-root h3 { margin: 4px 0 6px !important; font-size: 13.5px !important; }
           #print-root h4 { margin: 3px 0 6px !important; font-size: 12px !important; }
 
           #print-root table {
@@ -84,25 +85,26 @@ export default function Standings() {
             page-break-inside: avoid !important;
           }
           #print-root th, #print-root td {
-            padding: 2px 3px !important;              /* tighter cells */
-            font-size: 10px !important;
+            padding: 2px 3px !important;
+            font-size: 9.5px !important;               /* a touch smaller to fit HSH entirely */
             border-bottom: 1px solid #eee !important;
-            white-space: nowrap !important;           /* prevent per-letter wrapping */
+            white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: clip !important;
           }
 
-          /* Player column: narrower but still wraps on words (not letters) */
+          /* Player column: make it narrower and allow wrapping (even mid-word if needed) */
           #print-root th.col-name, #print-root td.col-name {
             white-space: normal !important;
-            word-break: keep-all !important;
-            min-width: 90px !important;               /* was 110 */
-            max-width: 140px !important;              /* was 180 */
+            overflow-wrap: anywhere !important;        /* wrap aggressively when space is tight */
+            word-break: break-word !important;
+            min-width: 80px !important;                /* was 90 */
+            max-width: 115px !important;               /* was 140 */
           }
 
-          /* Numeric columns: allow a tad tighter min width */
+          /* Numeric columns: tighten minimum width a bit more */
           #print-root th[data-num="1"], #print-root td[data-num="1"] {
-            min-width: 30px !important;               /* was 34 */
+            min-width: 28px !important;                /* was 30 */
             text-align: right !important;
             font-variant-numeric: tabular-nums;
           }
