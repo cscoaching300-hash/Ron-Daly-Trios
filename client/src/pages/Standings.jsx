@@ -2,15 +2,41 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getAuthHeaders } from '../lib/auth.js'
 
-// lazy-load html2canvas only when needed
+// ---- Capture PNG of the printable area (robust settings) ----
 async function captureStandingsPNG(node) {
-  const { default: html2canvas } = await import('html2canvas')
+  let html2canvas
+  try {
+    ({ default: html2canvas } = await import('html2canvas'))
+  } catch {
+    return null
+  }
+
   const canvas = await html2canvas(node, {
-    backgroundColor: '#fff',
-    scale: 2,           // crisp PNG
-    useCORS: true
+    backgroundColor: '#ffffff',
+    scale: 2,
+    useCORS: true,
+    foreignObjectRendering: true,
+    onclone: (doc) => {
+      // Force simple palette to avoid Color-4 `color()` parser issues, etc.
+      const style = doc.createElement('style')
+      style.textContent = `
+        :root {
+          color-scheme: light !important;
+          --bg: #ffffff !important;
+          --card: #ffffff !important;
+          --border: #e0e0e0 !important;
+          --text: #111111 !important;
+          --muted: #666666 !important;
+          --primary: #1a73e8 !important;
+        }
+        * { filter: none !important; backdrop-filter: none !important; }
+        .no-print, nav, .appbar, .site-header { display:none !important; }
+      `
+      doc.head.appendChild(style)
+    }
   })
-  return new Promise((resolve) => canvas.toBlob(b => resolve(b), 'image/png'))
+
+  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
 }
 
 const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
@@ -52,51 +78,49 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
+  // split into two columns
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
     return [left, right]
   }, [playerGroups])
 
-const shareToFacebook = async () => {
-  try {
-    const root = document.getElementById('print-root')
-    if (!root) return
+  const shareToFacebook = async () => {
+    try {
+      const root = document.getElementById('print-root')
+      if (!root) return
+      const blob = await captureStandingsPNG(root)
+      if (!blob) return
 
-    // make sure everything visible before shot
-    const blob = await captureStandingsPNG(root)
-    if (!blob) return
+      const file = new File([blob], 'standings.png', { type: 'image/png' })
 
-    const file = new File([blob], 'standings.png', { type: 'image/png' })
+      // Preferred: native share with the actual image
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          text: `${league?.name || 'League'} – Standings`,
+          files: [file]
+        })
+        return
+      }
 
-    // Mobile / supported desktop: share the actual image
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        text: `${league?.name || 'League'} – Standings`,
-        files: [file]
-      })
-      return
+      // Fallback 1: FB share dialog for the page
+      const shareUrl = `${window.location.origin}/standings`
+      const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`
+      window.open(fb, '_blank', 'noopener,noreferrer,width=740,height=560')
+
+      // Fallback 2: also download the image so it can be attached manually
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'standings.png'
+      document.body.appendChild(a)
+      a.click()
+      URL.revokeObjectURL(a.href)
+      a.remove()
+    } catch (e) {
+      alert('Share failed. You can still use Export PDF or the downloaded PNG.')
+      console.error(e)
     }
-
-    // Fallback 1: open Facebook Share Dialog for this page
-    const shareUrl = `${window.location.origin}/standings`
-    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`
-    window.open(fb, '_blank', 'noopener,noreferrer,width=740,height=560')
-
-    // Fallback 2: also download the PNG so users can attach it manually in FB
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = 'standings.png'
-    document.body.appendChild(a)
-    a.click()
-    URL.revokeObjectURL(a.href)
-    a.remove()
-  } catch (e) {
-    alert('Share failed. You can still use Export PDF or the downloaded PNG.')
-    console.error(e)
   }
-}
-
 
   return (
     <>
@@ -117,8 +141,6 @@ const shareToFacebook = async () => {
             width: 100% !important; margin: 0 !important; padding: 0 !important;
           }
           @page { size: A4; margin: 6mm; }
-
-          /* Slightly smaller overall print scaling */
           #print-root { zoom: 0.82; }
 
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -137,25 +159,25 @@ const shareToFacebook = async () => {
           }
           #print-root th, #print-root td {
             padding: 2px 3px !important;
-            font-size: 9.5px !important;               /* a touch smaller to fit HSH entirely */
+            font-size: 9.5px !important;
             border-bottom: 1px solid #eee !important;
             white-space: nowrap !important;
             overflow: visible !important;
             text-overflow: clip !important;
           }
 
-          /* Player column: make it narrower and allow wrapping (even mid-word if needed) */
+          /* Player column: allow wrapping + keep narrow */
           #print-root th.col-name, #print-root td.col-name {
             white-space: normal !important;
-            overflow-wrap: anywhere !important;        /* wrap aggressively when space is tight */
+            overflow-wrap: anywhere !important;
             word-break: break-word !important;
-            min-width: 80px !important;                /* was 90 */
-            max-width: 115px !important;               /* was 140 */
+            min-width: 80px !important;
+            max-width: 115px !important;
           }
 
-          /* Numeric columns: tighten minimum width a bit more */
+          /* Numeric columns tight */
           #print-root th[data-num="1"], #print-root td[data-num="1"] {
-            min-width: 28px !important;                /* was 30 */
+            min-width: 28px !important;
             text-align: right !important;
             font-variant-numeric: tabular-nums;
           }
@@ -308,18 +330,14 @@ const shareToFacebook = async () => {
           </div>
         </section>
 
-        <div className="no-print" style={{ display:'flex', justifyContent:'flex-end', padding:'6px 0 2px' }}>
+        {/* Controls */}
+        <div className="no-print" style={{ display:'flex', gap:8, justifyContent:'flex-end', padding:'6px 0 2px' }}>
           <button className="button" onClick={() => window.print()}>Export PDF</button>
+          <button className="button primary" onClick={shareToFacebook}>Share to Facebook</button>
         </div>
-<div className="no-print" style={{ display:'flex', gap:8, justifyContent:'flex-end', padding:'6px 0 2px' }}>
-  <button className="button" onClick={() => window.print()}>Export PDF</button>
-  <button className="button primary" onClick={shareToFacebook}>Share to Facebook</button>
-</div>
-
 
         {loading && <div className="muted">Loading…</div>}
       </div>
     </>
   )
 }
-
