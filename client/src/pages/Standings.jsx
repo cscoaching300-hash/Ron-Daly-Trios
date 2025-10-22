@@ -66,7 +66,8 @@ export default function Standings() {
             width: 100% !important; margin: 0 !important; padding: 0 !important;
           }
           @page { size: A4; margin: 6mm; }
-          #print-root { zoom: 0.86; } /* tweak 0.82–0.88 if you need a tiny nudge */
+          /* small nudge so nothing clips on the right edge */
+          #print-root { zoom: 0.84; }
 
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           .no-print { display: none !important; }
@@ -76,7 +77,6 @@ export default function Standings() {
           #print-root h3 { margin: 4px 0 6px !important; font-size: 14px !important; }
           #print-root h4 { margin: 3px 0 6px !important; font-size: 12px !important; }
 
-          /* Tables: no clipping, but keep columns usable */
           #print-root table {
             width: 100% !important;
             border-collapse: collapse !important;
@@ -84,25 +84,25 @@ export default function Standings() {
             page-break-inside: avoid !important;
           }
           #print-root th, #print-root td {
-            padding: 3px 4px !important;
+            padding: 2px 3px !important;              /* tighter cells */
             font-size: 10px !important;
             border-bottom: 1px solid #eee !important;
-            white-space: nowrap !important;      /* default: keep headers/numbers on one line */
+            white-space: nowrap !important;           /* prevent per-letter wrapping */
             overflow: visible !important;
             text-overflow: clip !important;
           }
 
-          /* First column (Player): allow normal wrapping, give it a sensible width */
+          /* Player column: narrower but still wraps on words (not letters) */
           #print-root th.col-name, #print-root td.col-name {
             white-space: normal !important;
-            word-break: keep-all !important;     /* wrap only at spaces/hyphens */
-            min-width: 110px !important;
-            max-width: 180px !important;
+            word-break: keep-all !important;
+            min-width: 90px !important;               /* was 110 */
+            max-width: 140px !important;              /* was 180 */
           }
 
-          /* Numeric columns: ensure they don't collapse and never wrap per-character */
+          /* Numeric columns: allow a tad tighter min width */
           #print-root th[data-num="1"], #print-root td[data-num="1"] {
-            min-width: 34px !important;          /* Hcp/Ave/Gms/Pts/HGS etc. */
+            min-width: 30px !important;               /* was 34 */
             text-align: right !important;
             font-variant-numeric: tabular-nums;
           }
