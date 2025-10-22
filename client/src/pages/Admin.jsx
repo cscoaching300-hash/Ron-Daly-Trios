@@ -29,12 +29,12 @@ export default function Admin() {
     teamPointsDraw:1,
     indivPointsWin:1,
     indivPointsDraw:0,
-    hcpLockFromWeek:1,
-    hcpLockWeeks:0,
+    // NEW: UI sets min *weeks*; server uses min *games*
+    hcpMinWeeks: 0,
     // Caps
     handicapCapAdult: 0,
     handicapCapJunior: 0,
-    // NEW: Officers (admin-entered)
+    // Officers
     officials: {
       chair: '',
       viceChair: '',
@@ -65,11 +65,16 @@ export default function Admin() {
         if (!cancel) {
           setLeague(current)
           if (current) {
+            const gamesPerWeek = current.gamesPerWeek ?? 3
+            const hcpMinGames = Number(current.hcpMinGames ?? 0)
+            // Derive weeks from games (ceil to be safe)
+            const hcpMinWeeks = Math.ceil(hcpMinGames / (gamesPerWeek || 1))
+
             setForm({
               name: current.name || '',
               teamsCount: current.teamsCount ?? 0,
               weeks: current.weeks ?? 0,
-              gamesPerWeek: current.gamesPerWeek ?? 3,
+              gamesPerWeek,
               mode: current.mode === 'scratch' ? 'scratch' : 'handicap',
               handicapBase: current.handicapBase ?? 200,
               handicapPercent: current.handicapPercent ?? 90,
@@ -77,8 +82,7 @@ export default function Admin() {
               teamPointsDraw: current.teamPointsDraw ?? 0,
               indivPointsWin: current.indivPointsWin ?? 0,
               indivPointsDraw: current.indivPointsDraw ?? 0,
-              hcpLockFromWeek: current.hcpLockFromWeek ?? 1,
-              hcpLockWeeks: current.hcpLockWeeks ?? 0,
+              hcpMinWeeks,
               handicapCapAdult: current.handicapCapAdult ?? 0,
               handicapCapJunior: current.handicapCapJunior ?? 0,
               officials: {
@@ -133,21 +137,26 @@ export default function Admin() {
     setSaving(true)
     setError(null)
     try {
+      const gamesPerWeek = Number(form.gamesPerWeek) || 0
+      const hcpMinWeeks = Number(form.hcpMinWeeks) || 0
+      const hcpMinGames = Math.max(0, hcpMinWeeks * gamesPerWeek)
+
       const body = {
-        ...form,
-        // ensure numbers
-        gamesPerWeek: Number(form.gamesPerWeek) || 0,
+        name: form.name,
+        gamesPerWeek,
+        mode: form.mode === 'scratch' ? 'scratch' : 'handicap',
         handicapBase: Number(form.handicapBase) || 0,
         handicapPercent: Number(form.handicapPercent) || 0,
         teamPointsWin: Number(form.teamPointsWin) || 0,
         teamPointsDraw: Number(form.teamPointsDraw) || 0,
         indivPointsWin: Number(form.indivPointsWin) || 0,
         indivPointsDraw: Number(form.indivPointsDraw) || 0,
-        hcpLockFromWeek: Number(form.hcpLockFromWeek) || 0,
-        hcpLockWeeks: Number(form.hcpLockWeeks) || 0,
+        // NEW: send min games (derived from weeks)
+        hcpMinGames,
+        // Caps
         handicapCapAdult: Number(form.handicapCapAdult) || 0,
         handicapCapJunior: Number(form.handicapCapJunior) || 0,
-        // NEW: officials block
+        // Officers
         officials: {
           chair: String(form.officials?.chair || ''),
           viceChair: String(form.officials?.viceChair || ''),
@@ -164,6 +173,15 @@ export default function Admin() {
       const data = await r.json()
       if (!r.ok || data?.error) throw new Error(data?.error || 'Save failed')
       setLeague(data.league)
+
+      // Update form state with normalized values (and re-derive weeks)
+      const normGPW = data.league?.gamesPerWeek ?? gamesPerWeek
+      const normMinGames = data.league?.hcpMinGames ?? hcpMinGames
+      setForm(f => ({
+        ...f,
+        gamesPerWeek: normGPW,
+        hcpMinWeeks: Math.ceil((normMinGames || 0) / (normGPW || 1))
+      }))
     } catch (e) {
       setError(String(e?.message || e))
     } finally {
@@ -253,14 +271,20 @@ export default function Admin() {
                   <input inputMode="numeric" value={form.handicapPercent} onChange={onNum('handicapPercent')} />
                 </div>
 
+                {/* NEW: Per-player threshold (weeks) */}
                 <div style={row}>
-                  <div style={label}>Freeze (from week)</div>
-                  <input inputMode="numeric" value={form.hcpLockFromWeek} onChange={onNum('hcpLockFromWeek')} />
-                </div>
-
-                <div style={row}>
-                  <div style={label}>Freeze (weeks)</div>
-                  <input inputMode="numeric" value={form.hcpLockWeeks} onChange={onNum('hcpLockWeeks')} />
+                  <div style={label}>Min Weeks Before Calc HCP</div>
+                  <div>
+                    <input
+                      inputMode="numeric"
+                      value={form.hcpMinWeeks}
+                      onChange={onNum('hcpMinWeeks')}
+                    />
+                    <div style={small}>
+                      Players use their manual/start handicap until they have played at least this many weeks.
+                      The server converts this to games = weeks × games per week.
+                    </div>
+                  </div>
                 </div>
 
                 {/* Handicap Caps */}
@@ -300,7 +324,7 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* NEW: Officers */}
+            {/* Officers */}
             <hr style={{ border:'0', borderTop:'1px solid var(--border)', margin:'12px 0' }} />
             <h4 style={{ margin:'0 0 8px' }}>League Officers (shown on Standings header)</h4>
 
