@@ -624,3 +624,105 @@ button:has(> :where(.theme-icon)) {
     min-width: 4.6rem;
   }
 }
+/* ---------- PRINT EXPORT FOR STANDINGS ---------- */
+
+/* Don’t print app chrome / anything outside the chosen box */
+@media print {
+  /* Hide everything by default... */
+  body * {
+    visibility: hidden !important;
+  }
+
+  /* ...except the print root */
+  #print-root,
+  #print-root * {
+    visibility: visible !important;
+  }
+
+  /* Make the print root occupy the page */
+  #print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Page setup: A4 landscape, tight margins */
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  /* Ensure colors/logos render nicely */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Remove shadows/rounded chrome for a clean sheet look */
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+  }
+
+  /* Tidy up headings and logo spacing */
+  #print-root h2,
+  #print-root h3 {
+    margin: 6px 0 8px 0 !important;
+  }
+  #print-root img {
+    max-height: 60px !important;
+    width: auto !important;
+  }
+
+  /* Tables: compact but readable so they fit on a single page */
+  #print-root table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed;                 /* prevents overflow/chopped columns */
+    page-break-inside: avoid !important; /* keep table on one page if possible */
+  }
+
+  #print-root th,
+  #print-root td {
+    padding: 4px 6px !important;
+    font-size: 11px !important;
+    white-space: nowrap;                 /* keep numbers in a single cell line */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-bottom: 1px solid #eee !important;
+  }
+
+  /* Slightly wider number columns if you use class names; otherwise, tables use fixed layout */
+  #print-root th:nth-child(n),
+  #print-root td:nth-child(n) {
+    /* You can fine-tune widths if needed; examples: */
+    /* width: 64px; */
+  }
+
+  /* If you have grids of player tables, avoid splits */
+  #print-root .player-standings-group,
+  #print-root .standings-grid,
+  #print-root .standings-section {
+    page-break-inside: avoid !important;
+  }
+
+  /* Hide anything explicitly marked no-print (buttons, tabs, nav, theme toggles) */
+  .no-print,
+  header,
+  nav,
+  .tabs,
+  .topbar,
+  .theme-toggle,
+  .light-dark-toggle {
+    display: none !important;
+  }
+
+  /* Remove app outer paddings so we maximize printable area */
+  body, html, #root {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
