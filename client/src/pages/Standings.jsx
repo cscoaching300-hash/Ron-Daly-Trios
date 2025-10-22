@@ -2,6 +2,17 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getAuthHeaders } from '../lib/auth.js'
 
+// lazy-load html2canvas only when needed
+async function captureStandingsPNG(node) {
+  const { default: html2canvas } = await import('html2canvas')
+  const canvas = await html2canvas(node, {
+    backgroundColor: '#fff',
+    scale: 2,           // crisp PNG
+    useCORS: true
+  })
+  return new Promise((resolve) => canvas.toBlob(b => resolve(b), 'image/png'))
+}
+
 const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
 const th = { ...baseCell, fontWeight: 700 }
 const td = baseCell
@@ -46,6 +57,46 @@ export default function Standings() {
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
     return [left, right]
   }, [playerGroups])
+
+const shareToFacebook = async () => {
+  try {
+    const root = document.getElementById('print-root')
+    if (!root) return
+
+    // make sure everything visible before shot
+    const blob = await captureStandingsPNG(root)
+    if (!blob) return
+
+    const file = new File([blob], 'standings.png', { type: 'image/png' })
+
+    // Mobile / supported desktop: share the actual image
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        text: `${league?.name || 'League'} – Standings`,
+        files: [file]
+      })
+      return
+    }
+
+    // Fallback 1: open Facebook Share Dialog for this page
+    const shareUrl = `${window.location.origin}/standings`
+    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`
+    window.open(fb, '_blank', 'noopener,noreferrer,width=740,height=560')
+
+    // Fallback 2: also download the PNG so users can attach it manually in FB
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = 'standings.png'
+    document.body.appendChild(a)
+    a.click()
+    URL.revokeObjectURL(a.href)
+    a.remove()
+  } catch (e) {
+    alert('Share failed. You can still use Export PDF or the downloaded PNG.')
+    console.error(e)
+  }
+}
+
 
   return (
     <>
@@ -260,6 +311,11 @@ export default function Standings() {
         <div className="no-print" style={{ display:'flex', justifyContent:'flex-end', padding:'6px 0 2px' }}>
           <button className="button" onClick={() => window.print()}>Export PDF</button>
         </div>
+<div className="no-print" style={{ display:'flex', gap:8, justifyContent:'flex-end', padding:'6px 0 2px' }}>
+  <button className="button" onClick={() => window.print()}>Export PDF</button>
+  <button className="button primary" onClick={shareToFacebook}>Share to Facebook</button>
+</div>
+
 
         {loading && <div className="muted">Loading…</div>}
       </div>
