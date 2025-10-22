@@ -11,7 +11,7 @@ async function captureStandingsPNG(node) {
     return null
   }
 
-  // Force a simple skin while capturing to avoid advanced color() etc.
+  // Force a simple skin while capturing to avoid advanced CSS color() etc.
   node.classList.add('capture-skin')
   const width  = Math.ceil(node.scrollWidth || node.offsetWidth || 1000)
   const height = Math.ceil(node.scrollHeight || node.offsetHeight || 1400)
@@ -26,10 +26,12 @@ async function captureStandingsPNG(node) {
       height,
       windowWidth: width,
       windowHeight: height,
-      onclone: (doc, cloned) => {
+      onclone: (doc) => {
         // Ensure the cloned root also has the capture skin
-        const clonedRoot = cloned.getElementById('print-root')
+        const clonedRoot = doc.getElementById('print-root')
         if (clonedRoot) clonedRoot.classList.add('capture-skin')
+
+        // Keep the clone super simple to avoid parsing errors
         const style = doc.createElement('style')
         style.textContent = `
           :root, body {
