@@ -52,13 +52,13 @@ export default function Standings() {
 
   return (
     <>
-      {/* Print-only CSS injected here so the page exports just the outer card and fits one page */}
+      {/* Print-only CSS injected here so the page exports just the outer card and fits one A4 portrait page */}
       <style>{`
         /* ---------- layout helpers (screen + print) ---------- */
         .standings-columns {
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-          gap: 12px;
+          gap: 10px;
         }
         .standings-col { min-width: 0; }
 
@@ -80,9 +80,9 @@ export default function Standings() {
             padding: 0 !important;
           }
 
-          /* Page setup: A4 landscape with tight margins */
+          /* Page setup: A4 portrait with tight margins */
           @page {
-            size: A4 landscape;
+            size: A4;            /* portrait (default) */
             margin: 8mm;
           }
 
@@ -98,7 +98,10 @@ export default function Standings() {
             border: 1px solid #ddd !important;
           }
 
-          /* Tables compact to fit one page */
+          /* Tables compact to fit a single page vertically */
+          #print-root h3 { margin: 6px 0 6px !important; }
+          #print-root h4 { margin: 4px 0 6px !important; }
+
           #print-root table {
             width: 100% !important;
             border-collapse: collapse !important;
@@ -107,8 +110,8 @@ export default function Standings() {
           }
           #print-root th,
           #print-root td {
-            padding: 4px 6px !important;
-            font-size: 11px !important;
+            padding: 4px 5px !important;
+            font-size: 10.5px !important;        /* slightly tighter for portrait */
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -136,7 +139,7 @@ export default function Standings() {
         {/* Logo */}
         <header style={{ textAlign:'center', display:'grid', gap:10 }}>
           {league?.logo ? (
-            <img src={league.logo} alt="League logo" style={{ height:110, objectFit:'contain', margin:'0 auto' }} />
+            <img src={league.logo} alt="League logo" style={{ height:100, objectFit:'contain', margin:'0 auto' }} />
           ) : null}
         </header>
 
@@ -188,7 +191,7 @@ export default function Standings() {
             <div className="standings-col">
               {leftGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
-                  <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
+                  <h4 style={{ margin:'4px 0 8px' }}>{group.team.name}</h4>
                   <div style={{ overflowX:'auto' }}>
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
@@ -233,7 +236,7 @@ export default function Standings() {
             <div className="standings-col">
               {rightGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
-                  <h4 style={{ margin:'4px 0 10px' }}>{group.team.name}</h4>
+                  <h4 style={{ margin:'4px 0 8px' }}>{group.team.name}</h4>
                   <div style={{ overflowX:'auto' }}>
                     <table style={{ width:'100%', borderCollapse:'collapse' }}>
                       <thead>
@@ -286,3 +289,4 @@ export default function Standings() {
     </>
   )
 }
+
