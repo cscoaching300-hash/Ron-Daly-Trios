@@ -159,6 +159,31 @@ function latestEnteredWeekForTeam(leagueId, teamId) {
     .filter(Number.isFinite);
   return weeks.length ? Math.max(...weeks) : 0;
 }
+// server.js (near other helpers)
+
+/* Latest week that a specific team has entered */
+function latestEnteredWeekForTeam(leagueId, teamId) {
+  if (!teamId) return 0;
+  const weeks = (db.data.sheets || [])
+    .filter(s => s && s.league_id === leagueId && (s.homeTeamId === teamId || s.awayTeamId === teamId))
+    .map(s => +s.week_number)
+    .filter(Number.isFinite);
+  return weeks.length ? Math.max(...weeks) : 0;
+}
+
+/* Latest week that a specific player has entered */
+function latestEnteredWeekForPlayer(leagueId, playerId) {
+  if (!playerId) return 0;
+  const weeks = (db.data.sheets || [])
+    .filter(s => s && s.league_id === leagueId)
+    .flatMap(s => ([
+      ...(s.homeGames || []),
+      ...(s.awayGames || [])
+    ]).filter(r => +r.playerId === +playerId).map(() => +s.week_number))
+    .filter(Number.isFinite);
+  return weeks.length ? Math.max(...weeks) : 0;
+}
+
 
 /* ===== Handicap/Stats utils ===== */
 function capHcp(leagueRaw, hcp, isJunior) {
@@ -572,33 +597,48 @@ app.post('/api/teams', requireAuth, (req, res) => {
 });
 
 /* ===== Players directory (default respects latest entered week / freeze) ===== */
+// server.js  (/api/players-with-teams)
 app.get('/api/players-with-teams', (req, res) => {
   db.read();
   const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
 
-  const defaultWeek = latestEnteredWeek(leagueId);
-  const hasWeekParam = (req.query.week != null);
-  const displayWeek = hasWeekParam ? +req.query.week : defaultWeek; // respects freeze by default
-  const statsUpTo   = hasWeekParam ? +req.query.week : (defaultWeek > 0 ? defaultWeek : null);
+  // If caller explicitly asks for ?week=, we honor it as an upper bound.
+  // If not provided, we don't force everyone to the league latest week.
+  const requestedWeek = (req.query.week != null) ? +req.query.week : null;
 
   const leagueRaw  = (db.data.leagues || []).find(l => l.id === leagueId);
-  const league = normalizeLeague(leagueRaw);
-  const players = (db.data.players || []).filter(p => p.league_id === leagueId);
-  const tps     = (db.data.team_players || []).filter(tp => tp.league_id === leagueId);
-  const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
+  const league     = normalizeLeague(leagueRaw);
+  const players    = (db.data.players || []).filter(p => p.league_id === leagueId);
+  const tps        = (db.data.team_players || []).filter(tp => tp.league_id === leagueId);
+  const teams      = (db.data.teams || []).filter(t => t.league_id === leagueId);
 
   const teamById = new Map(teams.map(t => [t.id, t]));
   const firstTeamByPlayer = new Map();
   for (const tp of tps) if (!firstTeamByPlayer.has(tp.player_id)) firstTeamByPlayer.set(tp.player_id, tp.team_id);
 
-  const playerStats = league ? computePlayerStatsForLeague(league, statsUpTo) : new Map();
+  // Build stats up to requestedWeek if present; otherwise up to each player's own latest (see below).
+  // We'll still compute a global map (up to requestedWeek if given; else up to all time)
+  const statsCutoff = (requestedWeek != null) ? requestedWeek : null;
+  const playerStats = league ? computePlayerStatsForLeague(league, statsCutoff) : new Map();
 
   const rows = players.map(p => {
-    const team_id = firstTeamByPlayer.get(p.id) ?? null;
+    // Player’s own latest entered week
+    const playerLatest = latestEnteredWeekForPlayer(leagueId, p.id);
+    // The display week for freeze logic per player
+    const displayWeekPlayer = (requestedWeek != null)
+      ? Math.min(requestedWeek, playerLatest || 0)
+      : (playerLatest || 0);
+
+    // Stats/effective average:
+    // - If player is still in freeze at displayWeekPlayer, HCP will come from start/manual anyway.
+    // - If out of freeze, `playerStats` (up to requestedWeek or all) is fine because it
+    //   only includes the weeks they've actually bowled.
     const st = playerStats.get(p.id) || { gms:0, pts:0, pinss:0, pinsh:0, hgs:0, hgh:0, hss:0, hsh:0, ave:+p.average||0 };
     const effectiveAvg = (st.ave && st.ave > 0) ? st.ave : (+p.average || 0);
-    const showHcp = hcpDisplayForList(league, displayWeek, p, effectiveAvg);
 
+    const showHcp = hcpDisplayForList(league, displayWeekPlayer, p, effectiveAvg);
+
+    const team_id = firstTeamByPlayer.get(p.id) ?? null;
     return {
       id: p.id,
       name: p.name,
@@ -823,9 +863,41 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     awayGames: awayGames || [],
     saved_at: new Date().toISOString()
   });
+const playersInSheet = [
+  ...(homeGames || []).map(r => +r.playerId).filter(Boolean),
+  ...(awayGames || []).map(r => +r.playerId).filter(Boolean),
+];
 
   // recompute averages ONLY; manual hcp is never changed here (blind rows ignored above)
-  recomputePlayersUpToWeek(league, +weekNumber);
+  function recomputeOnlyPlayersInSheet(league, sheetWeek, playersInSheet) {
+  const leagueId = league.id;
+  const set = new Set(playersInSheet.map(id => +id));
+  const sheets = (db.data.sheets || [])
+    .filter(s => s.league_id === leagueId && s.week_number <= sheetWeek);
+
+  const agg = new Map(); // pid -> { gms, pins }
+  const bump = (row) => {
+    if (!row?.playerId || row.blind) return;
+    const pid = +row.playerId;
+    if (!set.has(pid)) return;
+    const a = agg.get(pid) || { gms:0, pins:0 };
+    a.gms  += 3;
+    a.pins += (num(row.g1) + num(row.g2) + num(row.g3));
+    agg.set(pid, a);
+  };
+
+  for (const s of sheets) {
+    (s.homeGames || []).forEach(bump);
+    (s.awayGames || []).forEach(bump);
+  }
+
+  for (const p of (db.data.players || []).filter(p => p.league_id === leagueId && set.has(+p.id))) {
+    const a = agg.get(p.id);
+    if (a && a.gms) p.average = Math.floor(a.pins / a.gms);
+    else p.average = Math.floor(Number.isFinite(+p.start_average) ? +p.start_average : (+p.average || 0));
+  }
+}
+
 
   db.write();
   res.json({ ok: true, matchId: match.id });
