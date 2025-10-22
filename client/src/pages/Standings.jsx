@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { getAuthHeaders } from '../lib/auth.js'
 
-// ---- Capture PNG of the printable area (robust settings) ----
+/* ---------- PNG capture (robust) ---------- */
 async function captureStandingsPNG(node) {
   let html2canvas
   try {
@@ -11,32 +11,42 @@ async function captureStandingsPNG(node) {
     return null
   }
 
-  const canvas = await html2canvas(node, {
-    backgroundColor: '#ffffff',
-    scale: 2,
-    useCORS: true,
-    foreignObjectRendering: true,
-    onclone: (doc) => {
-      // Force simple palette to avoid Color-4 `color()` parser issues, etc.
-      const style = doc.createElement('style')
-      style.textContent = `
-        :root {
-          color-scheme: light !important;
-          --bg: #ffffff !important;
-          --card: #ffffff !important;
-          --border: #e0e0e0 !important;
-          --text: #111111 !important;
-          --muted: #666666 !important;
-          --primary: #1a73e8 !important;
-        }
-        * { filter: none !important; backdrop-filter: none !important; }
-        .no-print, nav, .appbar, .site-header { display:none !important; }
-      `
-      doc.head.appendChild(style)
-    }
-  })
+  // Force a simple skin while capturing to avoid advanced color() etc.
+  node.classList.add('capture-skin')
+  const width  = Math.ceil(node.scrollWidth || node.offsetWidth || 1000)
+  const height = Math.ceil(node.scrollHeight || node.offsetHeight || 1400)
 
-  return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
+  try {
+    const canvas = await html2canvas(node, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      foreignObjectRendering: true,
+      width,
+      height,
+      windowWidth: width,
+      windowHeight: height,
+      onclone: (doc, cloned) => {
+        // Ensure the cloned root also has the capture skin
+        const clonedRoot = cloned.getElementById('print-root')
+        if (clonedRoot) clonedRoot.classList.add('capture-skin')
+        const style = doc.createElement('style')
+        style.textContent = `
+          :root, body {
+            color-scheme: light !important;
+            background: #ffffff !important;
+            color: #111 !important;
+          }
+          .no-print, nav, .appbar, .site-header { display:none !important; }
+          * { filter:none !important; backdrop-filter:none !important; }
+        `
+        doc.head.appendChild(style)
+      }
+    })
+    return await new Promise((resolve) => canvas.toBlob(b => resolve(b), 'image/png'))
+  } finally {
+    node.classList.remove('capture-skin')
+  }
 }
 
 const baseCell = { padding: 8, borderBottom: '1px solid var(--border)' }
@@ -78,37 +88,25 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
-  // split into two columns
   const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
     playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
     return [left, right]
   }, [playerGroups])
 
+  /* ---------- Share to Facebook (always website) + PNG download ---------- */
   const shareToFacebook = async () => {
     try {
-      const root = document.getElementById('print-root')
-      if (!root) return
-      const blob = await captureStandingsPNG(root)
-      if (!blob) return
-
-      const file = new File([blob], 'standings.png', { type: 'image/png' })
-
-      // Preferred: native share with the actual image
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          text: `${league?.name || 'League'} – Standings`,
-          files: [file]
-        })
-        return
-      }
-
-      // Fallback 1: FB share dialog for the page
+      // Always open the Facebook web share dialog for this page
       const shareUrl = `${window.location.origin}/standings`
       const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`
       window.open(fb, '_blank', 'noopener,noreferrer,width=740,height=560')
 
-      // Fallback 2: also download the image so it can be attached manually
+      // And download a PNG so you can attach it manually if you like
+      const root = document.getElementById('print-root')
+      if (!root) return
+      const blob = await captureStandingsPNG(root)
+      if (!blob) return
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = 'standings.png'
@@ -117,7 +115,7 @@ export default function Standings() {
       URL.revokeObjectURL(a.href)
       a.remove()
     } catch (e) {
-      alert('Share failed. You can still use Export PDF or the downloaded PNG.')
+      alert('Share failed. You can still export to PDF.')
       console.error(e)
     }
   }
@@ -132,6 +130,13 @@ export default function Standings() {
         }
         .standings-col { min-width: 0; }
 
+        /* Simple palette when capturing PNG */
+        .capture-skin, .capture-skin * {
+          --bg:#fff; --card:#fff; --border:#e0e0e0; --text:#111; --muted:#666; --primary:#1a73e8;
+          background-color: transparent;
+          color: var(--text);
+        }
+
         @media print {
           body * { visibility: hidden !important; }
           #print-root, #print-root * { visibility: visible !important; }
@@ -141,6 +146,7 @@ export default function Standings() {
             width: 100% !important; margin: 0 !important; padding: 0 !important;
           }
           @page { size: A4; margin: 6mm; }
+
           #print-root { zoom: 0.82; }
 
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -165,8 +171,6 @@ export default function Standings() {
             overflow: visible !important;
             text-overflow: clip !important;
           }
-
-          /* Player column: allow wrapping + keep narrow */
           #print-root th.col-name, #print-root td.col-name {
             white-space: normal !important;
             overflow-wrap: anywhere !important;
@@ -174,14 +178,11 @@ export default function Standings() {
             min-width: 80px !important;
             max-width: 115px !important;
           }
-
-          /* Numeric columns tight */
           #print-root th[data-num="1"], #print-root td[data-num="1"] {
             min-width: 28px !important;
             text-align: right !important;
             font-variant-numeric: tabular-nums;
           }
-
           .page-break-avoid { page-break-inside: avoid !important; }
         }
       `}</style>
@@ -236,9 +237,7 @@ export default function Standings() {
         {/* Player standings — two columns */}
         <section className="page-break-avoid">
           <h3 style={{ marginTop:0 }}>Player Standings</h3>
-
           <div className="standings-columns">
-            {/* Left */}
             <div className="standings-col">
               {leftGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
@@ -283,7 +282,6 @@ export default function Standings() {
               ))}
             </div>
 
-            {/* Right */}
             <div className="standings-col">
               {rightGroups.map(group => (
                 <div key={group.team.id} className="card page-break-avoid" style={{ overflow:'hidden' }}>
