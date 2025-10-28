@@ -1284,6 +1284,43 @@ app.get('/api/login', (req, res) => {
   });
 });
 
+/* ===== League Logo Upload ===== */
+app.post('/api/leagues/:id/logo', requireAuth, upload.single('logo'), (req, res) => {
+  db.read();
+  const id = +req.params.id;
+
+  // Only allow uploading to the league you’re authenticated as
+  if (req.league.id !== id) return res.status(403).json({ error: 'forbidden' });
+
+  const league = (db.data.leagues || []).find(l => l.id === id);
+  if (!league) return res.status(404).json({ error: 'league not found' });
+
+  if (!req.file) return res.status(400).json({ error: 'no_file' });
+
+  try {
+    // Preserve an extension for friendlier serving
+    const ext = path.extname(req.file.originalname || '').toLowerCase() || '.png';
+    const newName = `${req.file.filename}${ext}`;
+    const oldPath = req.file.path; // saved by multer
+    const newPath = path.join(uploadsDir, newName);
+
+    // Rename so the public URL has an extension
+    fs.renameSync(oldPath, newPath);
+
+    const publicUrl = `/uploads/${newName}`;
+
+    // Save on THIS league only
+    league.logo = publicUrl;
+
+    db.write();
+    return res.json({ ok: true, logo: publicUrl });
+  } catch (err) {
+    console.error('logo upload error', err);
+    return res.status(500).json({ error: 'upload_failed' });
+  }
+});
+
+
 /* ===== Serve client (Vite dist) ===== */
 app.use(express.static(path.join(__dirname, 'client', 'dist')));
 app.get('*', (req, res) => {

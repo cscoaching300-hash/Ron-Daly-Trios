@@ -74,7 +74,20 @@ export default function Standings() {
           fetch('/api/standings/players', { headers: getAuthHeaders() }),
         ])
         const leagues = await lgRes.json()
-        const leagueFromToken = leagues[0] || null
+        // prefer the league we’re authenticated as
+let leagueFromToken = null
+try {
+  const saved = JSON.parse(localStorage.getItem('leagueAuth') || 'null')
+  const savedId = saved?.id ? Number(saved.id) : null
+  leagueFromToken =
+    (savedId && leagues.find(l => l.id === savedId)) ||
+    leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) ||
+    leagues[0] ||
+    null
+} catch {
+  leagueFromToken = leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) || leagues[0] || null
+}
+
         const teams = await teamRes.json()
         const pGroups = await pRes.json()
         if (!cancel) {
