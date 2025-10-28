@@ -838,6 +838,25 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     match.away_points = awayTeamPts + singles.awayPts;
   }
 
+  // --- Snapshot full sheet (players + names + team names) for archive ---
+  const playersById = new Map((db.data.players || []).map(p => [p.id, p]));
+  const teamsById   = new Map((db.data.teams || []).map(t => [t.id, t]));
+
+  const snapshotRow = (row) => {
+    if (!row) return null;
+    const pid = Number(row.playerId) || null;
+    const p   = pid ? playersById.get(pid) : null;
+    return {
+      playerId: pid,
+      playerName: p?.name ?? row.playerName ?? null,
+      g1: num(row.g1), g2: num(row.g2), g3: num(row.g3),
+      hcp: num(row.hcp),
+      blind: !!row.blind
+    };
+  };
+  const snapshotRows = (rows = []) => rows.map(snapshotRow).filter(Boolean);
+
+  // Replace any existing snapshot for this exact fixture/week
   db.data.sheets = (db.data.sheets || []).filter(s =>
     !(s.league_id===league.id && s.week_number===+weekNumber && s.homeTeamId===+homeTeamId && s.awayTeamId===+awayTeamId)
   );
@@ -846,8 +865,10 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     week_number: +weekNumber,
     homeTeamId: +homeTeamId,
     awayTeamId: +awayTeamId,
-    homeGames: homeGames || [],
-    awayGames: awayGames || [],
+    homeTeamName: teamsById.get(+homeTeamId)?.name ?? null,
+    awayTeamName: teamsById.get(+awayTeamId)?.name ?? null,
+    homeGames: snapshotRows(homeGames || []),
+    awayGames: snapshotRows(awayGames || []),
     saved_at: new Date().toISOString()
   });
 
@@ -1069,37 +1090,56 @@ app.get('/api/weeks', (req, res) => {
 
 app.get('/api/sheets', (req, res) => {
   db.read();
-  const leagueId = +(req.headers['x-league-id'] || req.query.leagueId || 0);
+  const leagueId   = +(req.headers['x-league-id'] || req.query.leagueId || 0);
   const weekNumber = req.query.weekNumber ? +req.query.weekNumber : null;
+  const includeRows = String(req.query.includeRows || '').trim() === '1';
 
-  const teams = (db.data.teams || []).filter(t => t.league_id === leagueId);
+  const teams   = (db.data.teams || []).filter(t => t.league_id === leagueId);
+  const players = (db.data.players || []).filter(p => p.league_id === leagueId);
   const teamName = id => teams.find(t => t.id === id)?.name || `Team ${id}`;
+  const playerName = id => players.find(p => p.id === id)?.name || null;
 
   const items = (db.data.sheets || [])
     .filter(s => s.league_id === leagueId && (weekNumber == null || s.week_number === weekNumber))
     .map(s => {
-      const totals = (() => {
-        const homeRows = s.homeGames || [];
-        const awayRows = s.awayGames || [];
-        const nn = v => (Number.isFinite(+v) ? +v : 0);
-        const sSeries = r => (nn(r.g1) + nn(r.g2) + nn(r.g3));
-        const hSeries = r => (nn(r.g1)+nn(r.hcp) + nn(r.g2)+nn(r.hcp) + nn(r.g3)+nn(r.hcp));
-        const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
-        const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
-        const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
-        const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(r), 0);
-        return { homeScratch, awayScratch, homeHandicap, awayHandicap };
-      })();
+      // backfill names for legacy rows if missing
+      const withNames = (rows = []) => rows.map(r => ({
+        ...r,
+        playerName: r?.playerName ?? (Number.isFinite(+r?.playerId) ? playerName(+r.playerId) : null)
+      }));
 
-      return {
+      // totals (unchanged)
+      const nn = v => (Number.isFinite(+v) ? +v : 0);
+      const sSeries = r => (nn(r.g1) + nn(r.g2) + nn(r.g3));
+      const hSeries = r => (nn(r.g1)+nn(r.hcp) + nn(r.g2)+nn(r.hcp) + nn(r.g3)+nn(r.hcp));
+      const homeRows = s.homeGames || [];
+      const awayRows = s.awayGames || [];
+      const totals = {
+        homeScratch: homeRows.reduce((a,r)=>a+sSeries(r), 0),
+        awayScratch: awayRows.reduce((a,r)=>a+sSeries(r), 0),
+        homeHandicap: homeRows.reduce((a,r)=>a+hSeries(r), 0),
+        awayHandicap: awayRows.reduce((a,r)=>a+hSeries(r), 0),
+      };
+
+      const base = {
         week_number: s.week_number,
         homeTeamId: s.homeTeamId,
         awayTeamId: s.awayTeamId,
-        home_team_name: teamName(s.homeTeamId),
-        away_team_name: teamName(s.awayTeamId),
+        home_team_name: s.homeTeamName ?? teamName(s.homeTeamId),
+        away_team_name: s.awayTeamName ?? teamName(s.awayTeamId),
         saved_at: s.saved_at,
         totals
       };
+
+      if (includeRows) {
+        return {
+          ...base,
+          homeGames: withNames(homeRows),
+          awayGames: withNames(awayRows),
+        };
+      }
+
+      return base;
     })
     .sort((a,b)=> a.week_number - b.week_number || a.home_team_name.localeCompare(b.home_team_name));
 
@@ -1240,3 +1280,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Bowling League server running on http://localhost:${PORT}`);
 });
+
