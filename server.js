@@ -536,16 +536,36 @@ app.put('/api/players/:id', requireAuth, (req, res) => {
   // Manual handicap: update ONLY if the 'hcp' key is present.
   if (Object.prototype.hasOwnProperty.call(req.body, 'hcp')) {
     if (hcp === '' || hcp === null) {
-      // Clear manual handicap so computed (or thresholded) value is used
-      p.hcp = null;
+      p.hcp = null; // clear manual override
     } else if (Number.isFinite(+hcp)) {
-      // Set a new manual handicap (uncapped by rule)
-      p.hcp = Math.max(0, +hcp);
+      p.hcp = Math.max(0, +hcp); // set manual override
+    }
+  }
+
+  // 🛠 Update team assignment if 'teamId' key is present in payload.
+  // Passing teamId: 0, null, '' will REMOVE the player from any team in this league.
+  if (Object.prototype.hasOwnProperty.call(req.body, 'teamId')) {
+    const newTeamId = Number(teamId) || null;
+
+    // Remove any existing mapping(s) for this player in this league
+    db.data.team_players = (db.data.team_players || []).filter(
+      tp => !(tp.league_id === req.league.id && tp.player_id === p.id)
+    );
+
+    // Add new mapping if provided
+    if (newTeamId) {
+      db.data.team_players.push({
+        league_id: req.league.id,
+        team_id: newTeamId,
+        player_id: p.id
+      });
     }
   }
 
   db.write();
   res.json(p);
+
+
 });
 
 app.delete('/api/players/:id', requireAuth, (req, res) => {
