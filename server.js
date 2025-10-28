@@ -685,7 +685,7 @@ app.get('/api/match-sheet', (req, res) => {
   const home    = teams.find(t => t.id === homeTeamId) || null;
   const away    = teams.find(t => t.id === awayTeamId) || null;
   const tps     = (db.data.team_players || []).filter(tp => tp.league_id === leagueId);
-  const players = (db.data.players || []);
+  const players = (db.data.players || []).filter(p => p.league_id === leagueId);
 
   const rosterIdsFor = (teamId) => new Set(tps.filter(tp => tp.team_id === teamId).map(tp => tp.player_id));
 

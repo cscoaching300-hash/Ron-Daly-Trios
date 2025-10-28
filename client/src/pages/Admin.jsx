@@ -314,6 +314,30 @@ export default function Admin() {
               </>
             )}
 
+            {/* ⬇️ NEW: Points section (always visible) */}
+            <hr style={{ border:'0', borderTop:'1px solid var(--border)', margin:'12px 0' }} />
+            <h4 style={{ margin:'0 0 8px' }}>Points</h4>
+
+            <div style={row}>
+              <div style={label}>Team Points — Win</div>
+              <input inputMode="numeric" value={form.teamPointsWin} onChange={onNum('teamPointsWin')} />
+            </div>
+
+            <div style={row}>
+              <div style={label}>Team Points — Draw</div>
+              <input inputMode="numeric" value={form.teamPointsDraw} onChange={onNum('teamPointsDraw')} />
+            </div>
+
+            <div style={row}>
+              <div style={label}>Individual Points — Win</div>
+              <input inputMode="numeric" value={form.indivPointsWin} onChange={onNum('indivPointsWin')} />
+            </div>
+
+            <div style={row}>
+              <div style={label}>Individual Points — Draw</div>
+              <input inputMode="numeric" value={form.indivPointsDraw} onChange={onNum('indivPointsDraw')} />
+            </div>
+
             {/* Logo upload */}
             <div style={row}>
               <div style={label}>Logo</div>
@@ -356,3 +380,4 @@ export default function Admin() {
     </div>
   )
 }
+
