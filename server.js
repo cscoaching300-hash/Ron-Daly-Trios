@@ -879,7 +879,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   res.json({ ok: true, matchId: match.id });
 });
 
-/* ===== Sheet-driven totals for team standings ===== */
+/* ===== Sheet-driven totals for team standings (TEAM highs, not individual) ===== */
 const sSeries = r => (num(r.g1) + num(r.g2) + num(r.g3));
 const hSeries = r => (num(r.g1)+num(r.hcp) + num(r.g2)+num(r.hcp) + num(r.g3)+num(r.hcp));
 
@@ -899,19 +899,32 @@ function sheetTotalsForMatch(leagueRaw, match) {
   const homeRows = sheet.homeGames || [];
   const awayRows = sheet.awayGames || [];
 
-  const homeScratch = homeRows.reduce((a,r)=>a+sSeries(r), 0);
-  const awayScratch = awayRows.reduce((a,r)=>a+sSeries(r), 0);
-  const homeHandicap = homeRows.reduce((a,r)=>a+hSeries(r), 0);
-  const awayHandicap = awayRows.reduce((a,r)=>a+hSeries(r), 0);
+  // TEAM totals per game (sum across all players)
+  const sumGameScratch   = (rows, g) => rows.reduce((a, r) => a + num(r[g]), 0);
+  const sumGameHandicap  = (rows, g) => rows.reduce((a, r) => a + num(r[g]) + num(r.hcp), 0);
 
-  const homeHgs = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
-  const awayHgs = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1), num(r.g2), num(r.g3))));
-  const homeHgh = Math.max(0, ...homeRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
-  const awayHgh = Math.max(0, ...awayRows.map(r => Math.max(num(r.g1)+num(r.hcp), num(r.g2)+num(r.hcp), num(r.g3)+num(r.hcp))));
-  const homeHss = Math.max(0, ...homeRows.map(r => sSeries(r)));
-  const awayHss = Math.max(0, ...awayRows.map(r => sSeries(r)));
-  const homeHsh = Math.max(0, ...homeRows.map(r => hSeries(r)));
-  const awayHsh = Math.max(0, ...awayRows.map(r => hSeries(r)));
+  const homeGameScratch  = ['g1','g2','g3'].map(g => sumGameScratch(homeRows, g));
+  const awayGameScratch  = ['g1','g2','g3'].map(g => sumGameScratch(awayRows, g));
+  const homeGameHandicap = ['g1','g2','g3'].map(g => sumGameHandicap(homeRows, g));
+  const awayGameHandicap = ['g1','g2','g3'].map(g => sumGameHandicap(awayRows, g));
+
+  // TEAM series totals (sum of all three games across all players)
+  const homeScratch  = homeGameScratch.reduce((a, v)  => a + v, 0);
+  const awayScratch  = awayGameScratch.reduce((a, v)  => a + v, 0);
+  const homeHandicap = homeGameHandicap.reduce((a, v) => a + v, 0);
+  const awayHandicap = awayGameHandicap.reduce((a, v) => a + v, 0);
+
+  // TEAM highs
+  const homeHgs = Math.max(0, ...homeGameScratch);
+  const awayHgs = Math.max(0, ...awayGameScratch);
+  const homeHgh = Math.max(0, ...homeGameHandicap);
+  const awayHgh = Math.max(0, ...awayGameHandicap);
+
+  // For completeness, HSS/HSH are team series highs (for this match that's the series total)
+  const homeHss = homeScratch;
+  const awayHss = awayScratch;
+  const homeHsh = homeHandicap;
+  const awayHsh = awayHandicap;
 
   return {
     homeScratch, awayScratch,
@@ -919,6 +932,7 @@ function sheetTotalsForMatch(leagueRaw, match) {
     homeHgs, awayHgs, homeHgh, awayHgh, homeHss, awayHss, homeHsh, awayHsh
   };
 }
+
 
 /* ===== Standings (teams) ===== */
 app.get('/api/standings', (req, res) => {
