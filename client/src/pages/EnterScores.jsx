@@ -9,7 +9,6 @@ const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
-// dropdown values for per-game blind
 const BLIND_OPTIONS = [
   { v: 'none', label: '—' },
   { v: 'g1', label: 'G1' },
@@ -20,10 +19,10 @@ const BLIND_OPTIONS = [
   { v: 'g2g3', label: 'G2+G3' },
   { v: 'all', label: 'All (3)' },
 ]
-
 const maskHas = (mask, g) => {
   if (!mask || mask === 'none') return false
   if (mask === 'all') return true
+  // g is '1' | '2' | '3'
   return mask.includes(g)
 }
 
@@ -58,14 +57,17 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
   )
 }
 
+/**
+ * One side of the sheet (home/away)
+ */
 function TeamTable({
   title,
   teamOptions,
   subOptions,
-  values,
+  values,           // raw state from parent
   setValues,
   gamesPerWeek,
-  opponentRowsProcessed,
+  opponentRowsProcessed, // <-- now really processed from parent
   opponentRowsRaw,
   indivWin,
   indivDraw,
@@ -79,7 +81,7 @@ function TeamTable({
       setValues([
         { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
         { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' }
       ])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,7 +98,7 @@ function TeamTable({
     [values]
   )
 
-  // build display rows (apply blind)
+  // build table rows with blind logic
   const rows = values.map(v => {
     const picked = v.playerId ? byId.get(String(v.playerId)) : null
     const baseAvg = picked ? num(picked.average) : 0
@@ -124,7 +126,7 @@ function TeamTable({
     }
   })
 
-  // auto singles
+  // auto singles vs opponent
   const autoSinglesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
@@ -141,7 +143,7 @@ function TeamTable({
     series: a.series + r.series, seriesH: a.seriesH + r.seriesH
   }), { g1:0,g2:0,g3:0,g1h:0,g2h:0,g3h:0, series:0, seriesH:0 })
 
-  // team-vs-team
+  // opponent totals for team points
   const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
   }), { g1:0, g2:0, g3:0 })
@@ -169,7 +171,7 @@ function TeamTable({
   const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
-  // team singles total respecting overrides
+  // team singles total, using overrides
   const singlesTotal = rows.reduce((sum, r, idx) => {
     const override = values[idx]?.indivPts
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
@@ -177,7 +179,7 @@ function TeamTable({
   }, 0)
 
   const addRow = () => setValues(v => [...v, { playerId:'', g1:'', g2:'', g3:'', hcp:0, blindMask:'none', indivPts:'' }])
-  const removeRow = idx => setValues(v => v.filter((_,i)=>i!==idx))
+  const removeRow = (idx) => setValues(v => v.filter((_,i)=>i!==idx))
 
   return (
     <section className="card" style={{flex: 1, minWidth: 720}}>
@@ -229,7 +231,7 @@ function TeamTable({
 
                   <td style={td}>{isJunior ? 'Yes' : ''}</td>
 
-                  {/* NEW: blind dropdown */}
+                  {/* Blind dropdown */}
                   <td style={td}>
                     <select
                       value={values[idx]?.blindMask || 'none'}
@@ -250,7 +252,7 @@ function TeamTable({
                           if (mask === 'all') next.hcp = Math.floor(baseHcp * 0.9)
                           else next.hcp = baseHcp
 
-                          // reset override
+                          // if we change blind, drop override
                           next.indivPts = ''
                           return next
                         }))
@@ -285,7 +287,7 @@ function TeamTable({
                   <td style={td}>{r.g3h}</td>
                   <td style={td}>{r.series}</td>
 
-                  {/* editable points */}
+                  {/* editable singles pts */}
                   <td style={td}>
                     <input
                       type="number"
@@ -421,7 +423,28 @@ export default function EnterScores() {
   const teamDraw = +sheet?.league?.teamPointsDraw || 0
   const useHandicap = (sheet?.league?.mode === 'handicap')
 
-  // summary uses the same rows (they already have blinded numbers in state)
+  // helper to make processed rows for opponent
+  const buildProcessed = (rows) => rows.map(r => {
+    const h = num(r.hcp)
+    const g1 = num(r.g1)
+    const g2 = num(r.g2)
+    const g3 = num(r.g3)
+    const mask = r.blindMask || 'none'
+    return {
+      ...r,
+      g1h: g1 + h,
+      g2h: g2 + h,
+      g3h: g3 + h,
+      blindG1: maskHas(mask,'1'),
+      blindG2: maskHas(mask,'2'),
+      blindG3: maskHas(mask,'3'),
+    }
+  })
+
+  const homeProcessed = buildProcessed(homeVals)
+  const awayProcessed = buildProcessed(awayVals)
+
+  // summary totals
   const totalsFor = (rows) => rows.reduce((acc, v) => {
     const h = num(v.hcp)
     const g1 = num(v.g1)
@@ -464,7 +487,7 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // summary singles – respect per-row overrides
+  // summary singles — respect overrides
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeVals.length, awayVals.length)
     let homePts = 0, awayPts = 0
@@ -474,12 +497,8 @@ export default function EnterScores() {
       const b = awayVals[i]
       if (!a && !b) continue
 
-      if (a?.indivPts !== undefined && a.indivPts !== '') {
-        homePts += num(a.indivPts)
-      }
-      if (b?.indivPts !== undefined && b.indivPts !== '') {
-        awayPts += num(b.indivPts)
-      }
+      if (a?.indivPts !== undefined && a.indivPts !== '') homePts += num(a.indivPts)
+      if (b?.indivPts !== undefined && b.indivPts !== '') awayPts += num(b.indivPts)
 
       if (a && b && (a.indivPts === '' || a.indivPts === undefined) && (b.indivPts === '' || b.indivPts === undefined)) {
         const aH = num(a.hcp), bH = num(b.hcp)
@@ -556,7 +575,7 @@ export default function EnterScores() {
         </div>
       </div>
 
-      {/* both tables */}
+      {/* tables */}
       <div style={{
         display:'flex',
         gap:12,
@@ -571,7 +590,7 @@ export default function EnterScores() {
           values={homeVals}
           setValues={setHomeVals}
           gamesPerWeek={gamesPerWeek}
-          opponentRowsProcessed={awayVals}
+          opponentRowsProcessed={awayProcessed}
           opponentRowsRaw={awayVals}
           indivWin={indivWin}
           indivDraw={indivDraw}
@@ -586,7 +605,7 @@ export default function EnterScores() {
           values={awayVals}
           setValues={setAwayVals}
           gamesPerWeek={gamesPerWeek}
-          opponentRowsProcessed={homeVals}
+          opponentRowsProcessed={homeProcessed}
           opponentRowsRaw={homeVals}
           indivWin={indivWin}
           indivDraw={indivDraw}
@@ -627,4 +646,5 @@ export default function EnterScores() {
     </div>
   )
 }
+
 
