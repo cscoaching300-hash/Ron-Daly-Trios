@@ -9,7 +9,7 @@ const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
-// use digits so the math can match easily
+/* every option tells us exactly which games are blind */
 const BLIND_OPTIONS = [
   { v: 'none', label: '—' },
   { v: '1', label: 'G1' },
@@ -20,14 +20,15 @@ const BLIND_OPTIONS = [
   { v: '23', label: 'G2+G3' },
   { v: 'all', label: 'All (3)' },
 ]
-function maskHas(mask, g) {
+
+const maskHas = (mask, g) => {
   if (!mask || mask === 'none') return false
   if (mask === 'all') return true
   const gg = typeof g === 'number' ? String(g) : g
   return mask.includes(gg)
 }
 
-/* Blind-aware singles outcome */
+/* BLIND VS BLIND LOGIC */
 function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
   if (aBlind && bBlind) return [0, 0]
   if (aBlind && !bBlind) return bVal > aVal ? [0, winPts] : [0, 0]
@@ -58,9 +59,7 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
   )
 }
 
-/**
- * One side of the sheet (home/away)
- */
+/* ONE SIDE OF SHEET */
 function TeamTable({
   title,
   teamOptions,
@@ -76,13 +75,13 @@ function TeamTable({
   teamDraw,
   useHandicap
 }) {
-  // ensure 3 rows
+  /* guarantee 3 rows on first mount */
   useEffect(() => {
     if (!values.length) {
       setValues([
         { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
         { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' }
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
       ])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,11 +98,11 @@ function TeamTable({
     [values]
   )
 
-  // build table rows with per-game blind logic
+  /* build processed rows with per-game blind logic */
   const rows = values.map(v => {
-    const picked = v.playerId ? byId.get(String(v.playerId)) : null
-    const baseAvg = picked ? num(picked.average) : 0
-    const baseHcp = picked ? num(picked.hcp) : num(v.hcp)
+    const picked   = v.playerId ? byId.get(String(v.playerId)) : null
+    const baseAvg  = picked ? num(picked.average) : 0
+    const baseHcp  = picked ? num(picked.hcp) : num(v.hcp)
 
     const blindScore = Math.floor(baseAvg * 0.9)
     const blindHcp   = Math.floor(baseHcp * 0.9)
@@ -125,6 +124,7 @@ function TeamTable({
       g2h: g2s + h2,
       g3h: g3s + h3,
       series: g1s + g2s + g3s,
+      /* each game carries its own handicap now */
       seriesH: g1s + h1 + g2s + h2 + g3s + h3,
       blindG1: maskHas(v.blindMask, 1),
       blindG2: maskHas(v.blindMask, 2),
@@ -132,7 +132,7 @@ function TeamTable({
     }
   })
 
-  // auto singles vs opponent
+  /* auto singles vs opposite team */
   const autoSinglesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
@@ -142,7 +142,7 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
-  // totals
+  /* team totals */
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
     g2: a.g2 + r.g2s,
@@ -154,7 +154,7 @@ function TeamTable({
     seriesH: a.seriesH + r.seriesH
   }), { g1:0,g2:0,g3:0,g1h:0,g2h:0,g3h:0, series:0, seriesH:0 })
 
-  // opponent totals for team points
+  /* opponent totals for team points */
   const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
   }), { g1:0, g2:0, g3:0 })
@@ -182,7 +182,7 @@ function TeamTable({
   const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
-  // team singles total, using overrides
+  /* team singles total, using overrides */
   const singlesTotal = rows.reduce((sum, r, idx) => {
     const override = values[idx]?.indivPts
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
@@ -221,6 +221,14 @@ function TeamTable({
               const override = values[idx]?.indivPts
               const effectivePts = override !== undefined && override !== '' ? override : (autoSinglesPts[idx] || 0)
 
+              /* display HCP:
+                 - if ANY game is blind, show the 90% number
+                 - else show the base
+              */
+              const displayHcp = (r.blindG1 || r.blindG2 || r.blindG3)
+                ? Math.floor(r.baseHcp * 0.9)
+                : r.baseHcp
+
               return (
                 <tr key={idx}>
                   <td style={td}>
@@ -242,7 +250,7 @@ function TeamTable({
 
                   <td style={td}>{isJunior ? 'Yes' : ''}</td>
 
-                  {/* Blind dropdown */}
+                  {/* blind dropdown */}
                   <td style={td}>
                     <select
                       value={values[idx]?.blindMask || 'none'}
@@ -254,20 +262,14 @@ function TeamTable({
                           const baseAvg = picked ? num(picked.average) : 0
                           const baseHcp = picked ? num(picked.hcp) : num(x.hcp)
                           const blindScore = Math.floor(baseAvg * 0.9)
-                          const blindHcp   = Math.floor(baseHcp * 0.9)
                           const next = { ...x, blindMask: mask, indivPts:'' }
 
                           if (maskHas(mask, 1)) next.g1 = String(blindScore)
                           if (maskHas(mask, 2)) next.g2 = String(blindScore)
                           if (maskHas(mask, 3)) next.g3 = String(blindScore)
 
-                          // if only some games blinded, leave base on others
-                          if (mask === 'all') {
-                            next.hcp = blindHcp
-                          } else {
-                            next.hcp = baseHcp
-                          }
-
+                          // still store base hcp in state; we only show reduced in the cell
+                          next.hcp = baseHcp
                           return next
                         }))
                       }}
@@ -278,7 +280,7 @@ function TeamTable({
                     </select>
                   </td>
 
-                  <td style={td}>{r.h1 === r.h2 && r.h2 === r.h3 ? r.h1 : '—'}</td>
+                  <td style={td}>{displayHcp || 0}</td>
 
                   {['g1','g2','g3'].map(k=>(
                     <td key={k} style={td}>
@@ -322,8 +324,10 @@ function TeamTable({
               )
             })}
 
+            {/* team totals row */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
+              <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>{totals.g1}</td>
@@ -337,6 +341,7 @@ function TeamTable({
               <td style={td}>—</td>
             </tr>
 
+            {/* team points row */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Points</td>
               <td style={td}>—</td>
@@ -437,15 +442,15 @@ export default function EnterScores() {
   const teamDraw = +sheet?.league?.teamPointsDraw || 0
   const useHandicap = (sheet?.league?.mode === 'handicap')
 
-  // helper to apply per-game blind (same as TeamTable)
+  /* process for summary exactly like table did */
   const processedForSummary = (rows) => rows.map(r => {
     const baseH = num(r.hcp)
     const blindH = Math.floor(baseH * 0.9)
     const mask = r.blindMask || 'none'
 
-    const g1s = maskHas(mask, 1) ? Math.floor(num(r.g1) || 0 * 0.9) : num(r.g1)
-    const g2s = maskHas(mask, 2) ? Math.floor(num(r.g2) || 0 * 0.9) : num(r.g2)
-    const g3s = maskHas(mask, 3) ? Math.floor(num(r.g3) || 0 * 0.9) : num(r.g3)
+    const g1s = maskHas(mask, 1) ? Math.floor(num(r.g1) * 0.9) : num(r.g1)
+    const g2s = maskHas(mask, 2) ? Math.floor(num(r.g2) * 0.9) : num(r.g2)
+    const g3s = maskHas(mask, 3) ? Math.floor(num(r.g3) * 0.9) : num(r.g3)
 
     const h1 = maskHas(mask, 1) ? blindH : baseH
     const h2 = maskHas(mask, 2) ? blindH : baseH
@@ -467,7 +472,6 @@ export default function EnterScores() {
   const homeProcessed = processedForSummary(homeVals)
   const awayProcessed = processedForSummary(awayVals)
 
-  // summary totals (respect per-game hcp)
   const totalsFor = (processed) => processed.reduce((acc, v) => {
     acc.scratch.g1 += v.g1s
     acc.scratch.g2 += v.g2s
@@ -506,29 +510,27 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // summary singles — respect overrides
+  /* summary singles with overrides */
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
-
     for (let i = 0; i < maxRows; i++) {
-      const a = homeVals[i]
-      const b = awayVals[i]
-      const pa = homeProcessed[i]
-      const pb = awayProcessed[i]
+      const rawA = homeVals[i]
+      const rawB = awayVals[i]
+      const a = homeProcessed[i]
+      const b = awayProcessed[i]
 
-      if (a?.indivPts !== undefined && a.indivPts !== '') homePts += num(a.indivPts)
-      if (b?.indivPts !== undefined && b.indivPts !== '') awayPts += num(b.indivPts)
+      if (rawA?.indivPts !== undefined && rawA.indivPts !== '') homePts += num(rawA.indivPts)
+      if (rawB?.indivPts !== undefined && rawB.indivPts !== '') awayPts += num(rawB.indivPts)
 
-      if (pa && pb && (a?.indivPts === '' || a?.indivPts === undefined) && (b?.indivPts === '' || b?.indivPts === undefined)) {
-        const [a1,b1] = blindAwareOutcome(pa.g1h, pb.g1h, !!pa.blindG1, !!pb.blindG1, indivWin, indivDraw)
-        const [a2,b2] = blindAwareOutcome(pa.g2h, pb.g2h, !!pa.blindG2, !!pb.blindG2, indivWin, indivDraw)
-        const [a3,b3] = blindAwareOutcome(pa.g3h, pb.g3h, !!pa.blindG3, !!pb.blindG3, indivWin, indivDraw)
+      if (a && b && (rawA?.indivPts === '' || rawA?.indivPts === undefined) && (rawB?.indivPts === '' || rawB?.indivPts === undefined)) {
+        const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw)
+        const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw)
+        const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw)
         homePts += a1 + a2 + a3
         awayPts += b1 + b2 + b3
       }
     }
-
     return { homePts, awayPts }
   }, [homeVals, awayVals, homeProcessed, awayProcessed, indivWin, indivDraw])
 
@@ -543,8 +545,8 @@ export default function EnterScores() {
       .filter(r => r.playerId)
       .map(r => ({
         playerId: +r.playerId,
-        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
-        hcp: num(r.hcp),
+        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp),
+        /* server still only knows "any blind" */
         blind: !!(r.blindMask && r.blindMask !== 'none')
       }))
     const payload = {
@@ -593,7 +595,7 @@ export default function EnterScores() {
         </div>
       </div>
 
-      {/* tables */}
+      {/* two tables */}
       <div style={{
         display:'flex',
         gap:12,
