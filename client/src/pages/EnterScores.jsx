@@ -320,36 +320,38 @@ function TeamTable({
             })}
 
             {/* totals */}
-            <tr>
-              <td style={{...td, fontWeight:700}}>Team Totals</td>
-              <td style={td}>—</td>
-              <td style={td}>—</td>
-              <td style={td}>—</td>
-              <td style={td}>{totals.g1}</td>
-              <td style={td}>{totals.g2}</td>
-              <td style={td}>{totals.g3}</td>
-              <td style={td}>{totals.g1h}</td>
-              <td style={td}>{totals.g2h}</td>
-              <td style={td}>{totals.g3h}</td>
-              <td style={td}>{totals.series}</td>
-              <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
-              <td style={td}>—</td>
-            </tr>
+<tr>
+  <td style={{...td, fontWeight:700}}>Team Totals</td>
+  <td style={td}>—</td>   {/* Jr */}
+  <td style={td}>—</td>   {/* Blind */}
+  <td style={td}>—</td>   {/* Hcp */}
+  <td style={td}>{totals.g1}</td>
+  <td style={td}>{totals.g2}</td>
+  <td style={td}>{totals.g3}</td>
+  <td style={td}>{totals.g1h}</td>
+  <td style={td}>{totals.g2h}</td>
+  <td style={td}>{totals.g3h}</td>
+  <td style={td}>{totals.series}</td>
+  <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
+  <td style={td}>—</td>
+</tr>
 
-            <tr>
-              <td style={{...td, fontWeight:700}}>Team Points</td>
-              <td style={td}>—</td>
-              <td style={td}>—</td>
-              <td style={td}>{g1Pts}</td>
-              <td style={td}>{g2Pts}</td>
-              <td style={td}>{g3Pts}</td>
-              <td style={td}>—</td>
-              <td style={td}>—</td>
-              <td style={td}>—</td>
-              <td style={td}>{seriesPts}</td>
-              <td style={{...td, fontWeight:700}}>{teamPtsTotal}</td>
-              <td style={td}>—</td>
-            </tr>
+<tr>
+  <td style={{...td, fontWeight:700}}>Team Points</td>
+  <td style={td}>—</td>   {/* Jr */}
+  <td style={td}>—</td>   {/* Blind */}
+  <td style={td}>—</td>   {/* Hcp */}
+  <td style={td}>{g1Pts}</td>
+  <td style={td}>{g2Pts}</td>
+  <td style={td}>{g3Pts}</td>
+  <td style={td}>—</td>
+  <td style={td}>—</td>
+  <td style={td}>—</td>
+  <td style={td}>{seriesPts}</td>
+  <td style={{...td, fontWeight:700}}>{teamPtsTotal}</td>
+  <td style={td}>—</td>
+</tr>
+
           </tbody>
         </table>
       </div>
