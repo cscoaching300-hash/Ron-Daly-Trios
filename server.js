@@ -329,14 +329,22 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
     .filter(s => s.league_id === league.id && s.week_number <= upToWeek);
 
   const agg = new Map(); // pid -> { gms, pins }
-  const bump = (row) => {
-    if (!row?.playerId || row.blind) return; // ignore blind rows entirely
-    const pid = +row.playerId;
-    const a = agg.get(pid) || { gms:0, pins:0 };
-    a.gms  += 3;
-    a.pins += (num(row.g1) + num(row.g2) + num(row.g3));
-    agg.set(pid, a);
-  };
+const bump = (row) => {
+  if (!row?.playerId || row.blind) return;
+  const pid = +row.playerId;
+  const a = agg.get(pid) || { gms:0, pins:0 };
+
+  const g1 = num(row.g1);
+  const g2 = num(row.g2);
+  const g3 = num(row.g3);
+
+  const played = [row.g1, row.g2, row.g3].filter(v => v !== '' && v != null && v !== undefined).length;
+
+  a.gms  += played;
+  a.pins += (g1 + g2 + g3);
+  agg.set(pid, a);
+};
+
   for (const s of sheets) {
     (s.homeGames || []).forEach(bump);
     (s.awayGames || []).forEach(bump);
