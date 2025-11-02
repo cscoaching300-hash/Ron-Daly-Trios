@@ -9,7 +9,7 @@ const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
-/* Blind-aware singles outcome */
+/* Blind-aware singles outcome. */
 function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
   if (aBlind && bBlind) return [0, 0]
   if (aBlind && !bBlind) return bVal > aVal ? [0, winPts] : [0, 0]
@@ -40,11 +40,14 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
   )
 }
 
+/**
+ * One side of the sheet (home/away)
+ */
 function TeamTable({
   title,
   teamOptions,
   subOptions,
-  values,
+  values,           // [{playerId, g1,g2,g3, hcp, blind?, indivPts?}]
   setValues,
   gamesPerWeek,
   opponentRowsProcessed,
@@ -77,6 +80,7 @@ function TeamTable({
     [values]
   )
 
+  // processed rows with g1h/g2h/g3h
   const rows = values.map(v => {
     const s1 = num(v.g1), s2 = num(v.g2), s3 = num(v.g3)
     const h  = num(v.hcp)
@@ -88,7 +92,8 @@ function TeamTable({
     }
   })
 
-  const singlesPts = rows.map((r, i) => {
+  // auto singles from head-to-head
+  const autoSinglesPts = rows.map((r, i) => {
     const opp = opponentRowsProcessed?.[i]
     if (!opp) return 0
     const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blind, !!opp.blind, indivWin, indivDraw)
@@ -97,14 +102,21 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
+  // team totals
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3),
     g1h: a.g1h + r.g1h, g2h: a.g2h + r.g2h, g3h: a.g3h + r.g3h,
     series: a.series + r.series, seriesH: a.seriesH + r.seriesH
   }), { g1:0,g2:0,g3:0,g1h:0,g2h:0,g3h:0, series:0, seriesH:0 })
 
-  const singlesTotal = singlesPts.reduce((s,v)=>s+v,0)
+  // sum using overrides if present
+  const singlesTotal = rows.reduce((sum, r, idx) => {
+    const override = values[idx]?.indivPts
+    const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
+    return sum + eff
+  }, 0)
 
+  // opponent totals for team pts
   const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
   }), { g1:0, g2:0, g3:0 })
@@ -161,6 +173,9 @@ function TeamTable({
             {rows.map((r, idx) => {
               const picked = byId.get(String(r.playerId))
               const isJunior = !!picked?.junior
+              const override = values[idx]?.indivPts
+              const effectivePts = override !== undefined && override !== '' ? override : (autoSinglesPts[idx] || 0)
+
               return (
                 <tr key={idx}>
                   <td style={td}>
@@ -175,9 +190,17 @@ function TeamTable({
                           if (x.blind) {
                             const blindH = Math.floor(baseHcp * 0.9)
                             const blindG = Math.floor(baseAvg * 0.9)
-                            return { ...x, playerId:id, hcp:blindH, g1:String(blindG), g2:String(blindG), g3:String(blindG) }
+                            return {
+                              ...x,
+                              playerId:id,
+                              hcp:blindH,
+                              g1:String(blindG),
+                              g2:String(blindG),
+                              g3:String(blindG),
+                              indivPts: ''  // clear manual pts on change
+                            }
                           }
-                          return { ...x, playerId:id, hcp:baseHcp }
+                          return { ...x, playerId:id, hcp:baseHcp, indivPts: '' }
                         }))
                       }}
                       teamOptions={teamOptions || []}
@@ -203,10 +226,18 @@ function TeamTable({
                             if (checked) {
                               const blindH = Math.floor(baseHcp * 0.9)
                               const blindG = Math.floor(baseAvg * 0.9)
-                              return { ...x, blind:true, hcp:blindH, g1:String(blindG), g2:String(blindG), g3:String(blindG) }
+                              return {
+                                ...x,
+                                blind:true,
+                                hcp:blindH,
+                                g1:String(blindG),
+                                g2:String(blindG),
+                                g3:String(blindG),
+                                indivPts: '' // reset override when going blind
+                              }
                             } else {
                               const normH = picked ? (num(picked.hcp) || 0) : num(x.hcp)
-                              return { ...x, blind:false, hcp:normH }
+                              return { ...x, blind:false, hcp:normH, indivPts: '' }
                             }
                           }))
                         }}
@@ -225,7 +256,10 @@ function TeamTable({
                         value={r[k]}
                         onChange={e=>{
                           const v = e.target.value.replace(/\D/g,'')
-                          setValues(list => list.map((x,i)=> i===idx ? {...x,[k]:v} : x))
+                          setValues(list => list.map((x,i)=>{
+                            if (i !== idx) return x
+                            return { ...x, [k]: v }
+                          }))
                         }}
                         disabled={!!r.blind}
                       />
@@ -235,7 +269,21 @@ function TeamTable({
                   <td style={td}>{r.g2h}</td>
                   <td style={td}>{r.g3h}</td>
                   <td style={td}>{r.series}</td>
-                  <td style={{...td, fontWeight: 700}}>{singlesPts[idx] || 0}</td>
+
+                  {/* editable points */}
+                  <td style={{...td}}>
+                    <input
+                      type="number"
+                      min="0"
+                      style={{width:56, textAlign:'center'}}
+                      value={effectivePts}
+                      onChange={e => {
+                        const val = e.target.value
+                        setValues(list => list.map((x,i)=> i===idx ? { ...x, indivPts: val } : x))
+                      }}
+                    />
+                  </td>
+
                   <td style={td}>
                     <button className="button" onClick={()=>removeRow(idx)}>✖</button>
                   </td>
@@ -292,10 +340,6 @@ export default function EnterScores() {
   const [homeVals, setHomeVals] = useState([])
   const [awayVals, setAwayVals] = useState([])
 
-  // NEW: overrides for singles totals
-  const [overrideSinglesHome, setOverrideSinglesHome] = useState('')
-  const [overrideSinglesAway, setOverrideSinglesAway] = useState('')
-
   const location = useLocation()
   const [params] = useSearchParams()
 
@@ -323,11 +367,11 @@ export default function EnterScores() {
             g2: String(r.g2 || ''),
             g3: String(r.g3 || ''),
             hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
-            blind: !!r.blind
+            blind: !!r.blind,
+            // server doesn’t store indiv overrides yet -> leave blank
           })
           setHomeVals((s.homeGames || []).map(shape))
           setAwayVals((s.awayGames || []).map(shape))
-          // if we ever decide to store singles overrides in sheet, we could restore here
         })
         .catch(() => {})
     }
@@ -338,9 +382,6 @@ export default function EnterScores() {
     if (!wk || !h || !a) return
     const data = await getMatchSheet(+wk, +h, +a)
     setSheet(data)
-    // clear overrides on new load
-    setOverrideSinglesHome('')
-    setOverrideSinglesAway('')
 
     if (!homeVals.length) {
       setHomeVals([
@@ -368,7 +409,7 @@ export default function EnterScores() {
   const process = rows => rows.map(v => {
     const s1 = num(v.g1), s2 = num(v.g2), s3 = num(v.g3)
     const h  = num(v.hcp)
-    return { ...v, g1h: s1+h, g2h: s2+h, g3h: s3+h }
+    return { ...v, g1h: s1+h, g2h: s2+h, g3h: s3+h, indivPts: v.indivPts }
   })
   const homeProcessed = useMemo(() => process(homeVals), [homeVals])
   const awayProcessed = useMemo(() => process(awayVals), [awayVals])
@@ -411,28 +452,40 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
+  // singles totals with per-row overrides
   const singlesTotals = useMemo(() => {
     const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
     let homePts = 0, awayPts = 0
     for (let i=0; i<maxRows; i++) {
-      const a = homeProcessed[i], b = awayProcessed[i]
-      if (!a || !b) continue
-      const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blind, !!b.blind, indivWin, indivDraw)
-      const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blind, !!b.blind, indivWin, indivDraw)
-      const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blind, !!b.blind, indivWin, indivDraw)
-      homePts += a1 + a2 + a3
-      awayPts += b1 + b2 + b3
+      const a = homeProcessed[i]
+      const b = awayProcessed[i]
+
+      const aOverride = homeVals[i]?.indivPts
+      const bOverride = awayVals[i]?.indivPts
+
+      if (aOverride !== undefined && aOverride !== '') {
+        homePts += num(aOverride)
+      } else if (a && b) {
+        const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blind, !!b.blind, indivWin, indivDraw)
+        const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blind, !!b.blind, indivWin, indivDraw)
+        const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blind, !!b.blind, indivWin, indivDraw)
+        homePts += a1 + a2 + a3
+        awayPts += b1 + b2 + b3
+        continue
+      }
+
+      if (bOverride !== undefined && bOverride !== '') {
+        awayPts += num(bOverride)
+      } else if (a && b) {
+        // already handled above in same branch
+      }
     }
     return { homePts, awayPts }
-  }, [homeProcessed, awayProcessed, indivWin, indivDraw])
-
-  // use override if present, else computed
-  const effectiveSinglesHome = overrideSinglesHome !== '' ? num(overrideSinglesHome) : singlesTotals.homePts
-  const effectiveSinglesAway = overrideSinglesAway !== '' ? num(overrideSinglesAway) : singlesTotals.awayPts
+  }, [homeProcessed, awayProcessed, indivWin, indivDraw, homeVals, awayVals])
 
   const totalPoints = {
-    home: (teamPoints.home || 0) + (effectiveSinglesHome || 0),
-    away: (teamPoints.away || 0) + (effectiveSinglesAway || 0),
+    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
+    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
   }
 
   const save = async () => {
@@ -443,6 +496,7 @@ export default function EnterScores() {
         playerId: +r.playerId,
         g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp),
         blind: !!r.blind
+        // we’re not persisting indiv overrides to sheet yet
       }))
     const payload = {
       weekNumber: +weekNumber,
@@ -450,7 +504,6 @@ export default function EnterScores() {
       awayTeamId: +awayId,
       homeGames: clean(homeVals),
       awayGames: clean(awayVals),
-      // send the totals we are actually showing (with overrides)
       totalPointsHome: totalPoints.home,
       totalPointsAway: totalPoints.away
     }
@@ -547,29 +600,13 @@ export default function EnterScores() {
             Team points are awarded for each game and the series (handicap rules apply if enabled).
           </div>
 
-          {/* Editable singles totals */}
-          <div style={{fontSize:18, marginTop:8, display:'flex', gap:10, justifyContent:'center', alignItems:'center'}}>
-            <strong>Singles Points:</strong>
-            <span>{sheet?.homeTeam?.name || 'Team A'}</span>
-            <input
-              type="number"
-              min="0"
-              style={{width:80, textAlign:'center'}}
-              value={overrideSinglesHome !== '' ? overrideSinglesHome : singlesTotals.homePts}
-              onChange={e => setOverrideSinglesHome(e.target.value)}
-            />
-            <span>—</span>
-            <input
-              type="number"
-              min="0"
-              style={{width:80, textAlign:'center'}}
-              value={overrideSinglesAway !== '' ? overrideSinglesAway : singlesTotals.awayPts}
-              onChange={e => setOverrideSinglesAway(e.target.value)}
-            />
-            <span>{sheet?.awayTeam?.name || 'Team B'}</span>
+          {/* now just display final singles totals (built from row overrides) */}
+          <div style={{fontSize:18, marginTop:8}}>
+            <strong>Singles Points:</strong>{' '}
+            {(sheet?.homeTeam?.name || 'Team A')} {singlesTotals.homePts} — {singlesTotals.awayPts} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:12}}>
-            Auto-calculated from head-to-head. You can override here if something was scored differently in-lane.
+            To adjust singles, edit the Pts column on the bowler rows.
           </div>
 
           <div style={{fontSize:20, marginTop:10}}>
@@ -581,3 +618,4 @@ export default function EnterScores() {
     </div>
   )
 }
+
