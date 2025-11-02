@@ -9,13 +9,7 @@ const th = { ...cell, fontWeight: 700 }
 const td = cell
 const num = v => (isFinite(+v) ? +v : 0)
 
-/* Blind-aware singles outcome.
-   Rules:
-   - A blind bowler never earns points.
-   - If blind's value >= opponent's, opponent gets 0 (no draw).
-   - If opponent's value > blind's, opponent gets win points.
-   - If neither is blind: normal win/draw.
-*/
+/* Blind-aware singles outcome */
 function blindAwareOutcome(aVal, bVal, aBlind, bBlind, winPts, drawPts) {
   if (aBlind && bBlind) return [0, 0]
   if (aBlind && !bBlind) return bVal > aVal ? [0, winPts] : [0, 0]
@@ -46,14 +40,11 @@ function PlayerSelect({ value, onChange, teamOptions, subOptions, disabledIds })
   )
 }
 
-/**
- * One side of the sheet (home/away)
- */
 function TeamTable({
   title,
   teamOptions,
   subOptions,
-  values,           // [{playerId, g1,g2,g3, hcp, blind?}]
+  values,
   setValues,
   gamesPerWeek,
   opponentRowsProcessed,
@@ -301,6 +292,10 @@ export default function EnterScores() {
   const [homeVals, setHomeVals] = useState([])
   const [awayVals, setAwayVals] = useState([])
 
+  // NEW: overrides for singles totals
+  const [overrideSinglesHome, setOverrideSinglesHome] = useState('')
+  const [overrideSinglesAway, setOverrideSinglesAway] = useState('')
+
   const location = useLocation()
   const [params] = useSearchParams()
 
@@ -332,6 +327,7 @@ export default function EnterScores() {
           })
           setHomeVals((s.homeGames || []).map(shape))
           setAwayVals((s.awayGames || []).map(shape))
+          // if we ever decide to store singles overrides in sheet, we could restore here
         })
         .catch(() => {})
     }
@@ -342,6 +338,10 @@ export default function EnterScores() {
     if (!wk || !h || !a) return
     const data = await getMatchSheet(+wk, +h, +a)
     setSheet(data)
+    // clear overrides on new load
+    setOverrideSinglesHome('')
+    setOverrideSinglesAway('')
+
     if (!homeVals.length) {
       setHomeVals([
         {playerId:'',g1:'',g2:'',g3:'',hcp:0, blind:false},
@@ -426,9 +426,13 @@ export default function EnterScores() {
     return { homePts, awayPts }
   }, [homeProcessed, awayProcessed, indivWin, indivDraw])
 
+  // use override if present, else computed
+  const effectiveSinglesHome = overrideSinglesHome !== '' ? num(overrideSinglesHome) : singlesTotals.homePts
+  const effectiveSinglesAway = overrideSinglesAway !== '' ? num(overrideSinglesAway) : singlesTotals.awayPts
+
   const totalPoints = {
-    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
-    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
+    home: (teamPoints.home || 0) + (effectiveSinglesHome || 0),
+    away: (teamPoints.away || 0) + (effectiveSinglesAway || 0),
   }
 
   const save = async () => {
@@ -446,6 +450,7 @@ export default function EnterScores() {
       awayTeamId: +awayId,
       homeGames: clean(homeVals),
       awayGames: clean(awayVals),
+      // send the totals we are actually showing (with overrides)
       totalPointsHome: totalPoints.home,
       totalPointsAway: totalPoints.away
     }
@@ -455,11 +460,10 @@ export default function EnterScores() {
   }
 
   return (
-    // PAGE CONTAINER CENTERED
     <div style={{
       display:'grid',
       gap:12,
-      maxWidth: 1520,   // wide enough for two 720px tables + gap
+      maxWidth: 1520,
       width:'100%',
       margin:'0 auto',
       padding:'0 12px'
@@ -487,7 +491,7 @@ export default function EnterScores() {
         </div>
       </div>
 
-      {/* both team tables — centered */}
+      {/* both team tables */}
       <div style={{
         display:'flex',
         gap:12,
@@ -542,13 +546,32 @@ export default function EnterScores() {
           <div className="muted" style={{fontSize:14}}>
             Team points are awarded for each game and the series (handicap rules apply if enabled).
           </div>
-          <div style={{fontSize:18, marginTop:8}}>
-            <strong>Singles Points:</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {singlesTotals.homePts} — {singlesTotals.awayPts} {(sheet?.awayTeam?.name || 'Team B')}
+
+          {/* Editable singles totals */}
+          <div style={{fontSize:18, marginTop:8, display:'flex', gap:10, justifyContent:'center', alignItems:'center'}}>
+            <strong>Singles Points:</strong>
+            <span>{sheet?.homeTeam?.name || 'Team A'}</span>
+            <input
+              type="number"
+              min="0"
+              style={{width:80, textAlign:'center'}}
+              value={overrideSinglesHome !== '' ? overrideSinglesHome : singlesTotals.homePts}
+              onChange={e => setOverrideSinglesHome(e.target.value)}
+            />
+            <span>—</span>
+            <input
+              type="number"
+              min="0"
+              style={{width:80, textAlign:'center'}}
+              value={overrideSinglesAway !== '' ? overrideSinglesAway : singlesTotals.awayPts}
+              onChange={e => setOverrideSinglesAway(e.target.value)}
+            />
+            <span>{sheet?.awayTeam?.name || 'Team B'}</span>
           </div>
           <div className="muted" style={{fontSize:12}}>
-            Singles are head-to-head per game with handicap (G1+H, G2+H, G3+H). Win={indivWin}, Draw={indivDraw}. Blinds never score, but can block their opponent.
+            Auto-calculated from head-to-head. You can override here if something was scored differently in-lane.
           </div>
+
           <div style={{fontSize:20, marginTop:10}}>
             <strong>Total Points:</strong>{' '}
             {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home} — {totalPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
