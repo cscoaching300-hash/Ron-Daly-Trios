@@ -132,16 +132,15 @@ function TeamTable({
     }
   })
 
-const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
+  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true }
 
-const autoSinglesPts = rows.map((r, i) => {
-  const opp = opponentRowsProcessed?.[i] || VIRTUAL_BLIND;
-  const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blindG1, !!opp.blindG1, indivWin, indivDraw);
-  const [g2A] = blindAwareOutcome(r.g2h, opp.g2h, !!r.blindG2, !!opp.blindG2, indivWin, indivDraw);
-  const [g3A] = blindAwareOutcome(r.g3h, opp.g3h, !!r.blindG3, !!opp.blindG3, indivWin, indivDraw);
-  return g1A + g2A + g3A;
-});
-
+  const autoSinglesPts = rows.map((r, i) => {
+    const opp = opponentRowsProcessed?.[i] || VIRTUAL_BLIND
+    const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blindG1, !!opp.blindG1, indivWin, indivDraw)
+    const [g2A] = blindAwareOutcome(r.g2h, opp.g2h, !!r.blindG2, !!opp.blindG2, indivWin, indivDraw)
+    const [g3A] = blindAwareOutcome(r.g3h, opp.g3h, !!r.blindG3, !!opp.blindG3, indivWin, indivDraw)
+    return g1A + g2A + g3A
+  })
 
   // totals
   const totals = rows.reduce((a, r) => ({
@@ -321,37 +320,37 @@ const autoSinglesPts = rows.map((r, i) => {
             })}
 
             {/* totals */}
-<tr>
-  <td style={{...td, fontWeight:700}}>Team Totals</td>
-  <td style={td}>—</td>   {/* Jr */}
-  <td style={td}>—</td>   {/* Blind */}
-  <td style={td}>—</td>   {/* Hcp */}
-  <td style={td}>{totals.g1}</td>
-  <td style={td}>{totals.g2}</td>
-  <td style={td}>{totals.g3}</td>
-  <td style={td}>{totals.g1h}</td>
-  <td style={td}>{totals.g2h}</td>
-  <td style={td}>{totals.g3h}</td>
-  <td style={td}>{totals.series}</td>
-  <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
-  <td style={td}>—</td>
-</tr>
+            <tr>
+              <td style={{...td, fontWeight:700}}>Team Totals</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>{totals.g1}</td>
+              <td style={td}>{totals.g2}</td>
+              <td style={td}>{totals.g3}</td>
+              <td style={td}>{totals.g1h}</td>
+              <td style={td}>{totals.g2h}</td>
+              <td style={td}>{totals.g3h}</td>
+              <td style={td}>{totals.series}</td>
+              <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
+              <td style={td}>—</td>
+            </tr>
 
-<tr>
-  <td style={{...td, fontWeight:700}}>Team Points</td>
-  <td style={td}>—</td>   {/* Jr */}
-  <td style={td}>—</td>   {/* Blind */}
-  <td style={td}>—</td>   {/* Hcp */}
-  <td style={td}>{g1Pts}</td>
-  <td style={td}>{g2Pts}</td>
-  <td style={td}>{g3Pts}</td>
-  <td style={td}>—</td>
-  <td style={td}>—</td>
-  <td style={td}>—</td>
-  <td style={td}>{seriesPts}</td>
-  <td style={{...td, fontWeight:700}}>{teamPtsTotal}</td>
-  <td style={td}>—</td>
-</tr>
+            <tr>
+              <td style={{...td, fontWeight:700}}>Team Points</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>{g1Pts}</td>
+              <td style={td}>{g2Pts}</td>
+              <td style={td}>{g3Pts}</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>—</td>
+              <td style={td}>{seriesPts}</td>
+              <td style={{...td, fontWeight:700}}>{teamPtsTotal}</td>
+              <td style={td}>—</td>
+            </tr>
 
           </tbody>
         </table>
@@ -378,6 +377,19 @@ export default function EnterScores() {
 
   useEffect(() => { getTeams().then(setTeams) }, [])
 
+  // build blindMask from saved per-game flags (fallback to legacy .blind)
+  const maskFromSavedRow = (r = {}) => {
+    const g1 = !!r.blindG1, g2 = !!r.blindG2, g3 = !!r.blindG3
+    if (g1 && g2 && g3) return 'all'
+    if (g1 && g2) return '12'
+    if (g1 && g3) return '13'
+    if (g2 && g3) return '23'
+    if (g1) return '1'
+    if (g2) return '2'
+    if (g3) return '3'
+    return r.blind ? 'all' : 'none'
+  }
+
   useEffect(() => {
     const pWeek = params.get('week')
     const pHome = params.get('homeTeamId') || params.get('teamA')
@@ -400,7 +412,7 @@ export default function EnterScores() {
             g2: String(r.g2 || ''),
             g3: String(r.g3 || ''),
             hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
-            blindMask: r.blind ? 'all' : 'none',
+            blindMask: maskFromSavedRow(r),
             indivPts: ''
           })
           setHomeVals((s.homeGames || []).map(shape))
@@ -439,7 +451,6 @@ export default function EnterScores() {
   const teamDraw = +sheet?.league?.teamPointsDraw || 0
   const useHandicap = (sheet?.league?.mode === 'handicap')
 
-  // processed for summary — same rule: only add hcp when score entered
   const processedForSummary = (rows) => rows.map(r => {
     const baseH = num(r.hcp)
     const blindH = Math.floor(baseH * 0.9)
@@ -508,67 +519,62 @@ export default function EnterScores() {
   }
 
   const singlesTotals = useMemo(() => {
-  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
-  const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
+    const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true }
+    const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
 
-  let homePts = 0, awayPts = 0;
+    let homePts = 0, awayPts = 0
 
-  for (let i = 0; i < maxRows; i++) {
-    const aRaw = homeVals[i];
-    const bRaw = awayVals[i];
+    for (let i = 0; i < maxRows; i++) {
+      const aRaw = homeVals[i]
+      const bRaw = awayVals[i]
 
-    // If either side is overridden, just add those (blank = no override)
-    const aOverride = aRaw?.indivPts !== undefined && aRaw.indivPts !== '' ? num(aRaw.indivPts) : null;
-    const bOverride = bRaw?.indivPts !== undefined && bRaw.indivPts !== '' ? num(bRaw.indivPts) : null;
+      const aOverride = aRaw?.indivPts !== undefined && aRaw.indivPts !== '' ? num(aRaw.indivPts) : null
+      const bOverride = bRaw?.indivPts !== undefined && bRaw.indivPts !== '' ? num(bRaw.indivPts) : null
 
-    if (aOverride != null || bOverride != null) {
-      if (aOverride != null) homePts += aOverride;
-      if (bOverride != null) awayPts += bOverride;
-      continue;
+      if (aOverride != null || bOverride != null) {
+        if (aOverride != null) homePts += aOverride
+        if (bOverride != null) awayPts += bOverride
+        continue
+      }
+
+      const a = homeProcessed[i] || VIRTUAL_BLIND
+      const b = awayProcessed[i] || VIRTUAL_BLIND
+
+      const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw)
+      const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw)
+      const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw)
+
+      homePts += a1 + a2 + a3
+      awayPts += b1 + b2 + b3
     }
 
-    // Otherwise auto-calc with blind-aware comparison
-    const a = homeProcessed[i] || VIRTUAL_BLIND;
-    const b = awayProcessed[i] || VIRTUAL_BLIND;
-
-    const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
-    const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
-    const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
-
-    homePts += a1 + a2 + a3;
-    awayPts += b1 + b2 + b3;
-  }
-
-  return { homePts, awayPts };
-}, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
-
+    return { homePts, awayPts }
+  }, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw])
 
   const totalPoints = {
     home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
     away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
   }
 
-  // inside EnterScores.jsx
-const clean = rows => rows
-  .filter(r => r.playerId)
-  .map(r => {
-    const mask = r.blindMask || 'none';
-    const blindG1 = mask.includes('1') || mask === 'all';
-    const blindG2 = mask.includes('2') || mask === 'all';
-    const blindG3 = mask.includes('3') || mask === 'all';
+  // ---------- SAVE (async) ----------
+  const clean = rows => rows
+    .filter(r => r.playerId)
+    .map(r => {
+      const mask = r.blindMask || 'none'
+      const blindG1 = mask.includes('1') || mask === 'all'
+      const blindG2 = mask.includes('2') || mask === 'all'
+      const blindG3 = mask.includes('3') || mask === 'all'
+      return {
+        playerId: +r.playerId,
+        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
+        hcp: num(r.hcp),
+        blindG1, blindG2, blindG3,
+        blind: (mask !== 'none')
+      }
+    })
 
-    return {
-      playerId: +r.playerId,
-      g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
-      hcp: num(r.hcp),
-
-      // NEW: per-game blind flags
-      blindG1, blindG2, blindG3,
-
-      // Back-compat summary flag (server will ignore if per-game flags exist)
-      blind: (mask !== 'none')
-    };
-  });
+  const save = async () => {
+    if (!sheet) return alert('Pick week and teams, then Load.')
 
     const payload = {
       weekNumber: +weekNumber,
@@ -579,9 +585,14 @@ const clean = rows => rows
       totalPointsHome: totalPoints.home,
       totalPointsAway: totalPoints.away
     }
-    const res = await saveMatchSheet(payload)
-    if (res?.ok) alert('Saved!')
-    else alert(res?.error || 'Save failed')
+
+    try {
+      const res = await saveMatchSheet(payload)
+      if (res?.ok) alert('Saved!')
+      else alert(res?.error || 'Save failed')
+    } catch (e) {
+      alert(e?.message || 'Save failed')
+    }
   }
 
   return (
@@ -616,7 +627,7 @@ const clean = rows => rows
         </div>
       </div>
 
-      {/* both team tables */}
+      {/* tables */}
       <div style={{
         display:'flex',
         gap:12,
@@ -630,14 +641,14 @@ const clean = rows => rows
           subOptions={sheet?.homeSubs || []}
           values={homeVals}
           setValues={setHomeVals}
-          gamesPerWeek={gamesPerWeek}
+          gamesPerWeek={+sheet?.league?.gamesPerWeek || 3}
           opponentRowsProcessed={awayProcessed}
           opponentRowsRaw={awayVals}
-          indivWin={indivWin}
-          indivDraw={indivDraw}
-          teamWin={teamWin}
-          teamDraw={teamDraw}
-          useHandicap={useHandicap}
+          indivWin={+sheet?.league?.indivPointsWin || 0}
+          indivDraw={+sheet?.league?.indivPointsDraw || 0}
+          teamWin={+sheet?.league?.teamPointsWin || 0}
+          teamDraw={+sheet?.league?.teamPointsDraw || 0}
+          useHandicap={(sheet?.league?.mode === 'handicap')}
         />
         <TeamTable
           title={sheet?.awayTeam?.name || 'Team B'}
@@ -645,14 +656,14 @@ const clean = rows => rows
           subOptions={sheet?.awaySubs || []}
           values={awayVals}
           setValues={setAwayVals}
-          gamesPerWeek={gamesPerWeek}
+          gamesPerWeek={+sheet?.league?.gamesPerWeek || 3}
           opponentRowsProcessed={homeProcessed}
           opponentRowsRaw={homeVals}
-          indivWin={indivWin}
-          indivDraw={indivDraw}
-          teamWin={teamWin}
-          teamDraw={teamDraw}
-          useHandicap={useHandicap}
+          indivWin={+sheet?.league?.indivPointsWin || 0}
+          indivDraw={+sheet?.league?.indivPointsDraw || 0}
+          teamWin={+sheet?.league?.teamPointsWin || 0}
+          teamDraw={+sheet?.league?.teamPointsDraw || 0}
+          useHandicap={(sheet?.league?.mode === 'handicap')}
         />
       </div>
 
@@ -666,7 +677,7 @@ const clean = rows => rows
           </div>
           <div style={{fontSize:18}}>
             <strong>Team Points (games + series):</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {teamPoints.home} — {teamPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
+            {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home - (singlesTotals.homePts || 0)} — {totalPoints.away - (singlesTotals.awayPts || 0)} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:14}}>
             Team points are awarded for each game and the series (handicap rules apply if enabled).
