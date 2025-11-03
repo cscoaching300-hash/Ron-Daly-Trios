@@ -244,54 +244,70 @@ function computePlayerStatsForLeague(leagueRaw, upToWeek = null) {
       const ra = A[i], rb = B[i];
 
       for (const gKey of ['g1','g2','g3']) {
-        const aVal = ra ? cmpVal(league, ra[gKey], ra?.hcp) : null;
-        const bVal = rb ? cmpVal(league, rb[gKey], rb?.hcp) : null;
+  const idx = gKey[1]; // '1' | '2' | '3'
 
-        if (ra && !ra.blind && num(ra[gKey]) > 0) {
-          const aS = ensure(+ra.playerId);
-          aS.gms += 1;
-          aS.pinss += num(ra[gKey]);
-          aS.pinsh += (league.mode === 'scratch' ? num(ra[gKey]) : num(ra[gKey]) + num(ra.hcp));
-          aS.hgs = Math.max(aS.hgs, num(ra[gKey]));
-          aS.hgh = Math.max(aS.hgh, num(ra[gKey]) + (league.mode === 'scratch' ? 0 : num(ra.hcp)));
-        }
-        if (rb && !rb.blind && num(rb[gKey]) > 0) {
-          const bS = ensure(+rb.playerId);
-          bS.gms += 1;
-          bS.pinss += num(rb[gKey]);
-          bS.pinsh += (league.mode === 'scratch' ? num(rb[gKey]) : num(rb[gKey]) + num(rb.hcp));
-          bS.hgs = Math.max(bS.hgs, num(rb[gKey]));
-          bS.hgh = Math.max(bS.hgh, num(rb[gKey]) + (league.mode === 'scratch' ? 0 : num(rb.hcp)));
-        }
+  const aGame = ra ? num(ra[gKey]) : 0;
+  const bGame = rb ? num(rb[gKey]) : 0;
 
-        if (ra && rb && num(aVal) > 0 && num(bVal) > 0) {
-          const aBlind = !!ra.blind;
-          const bBlind = !!rb.blind;
+  // Per-game blind flags with fallback to row.blind
+  const aBlind = !!(ra && ((ra[`blindG${idx}`] ?? ra.blind) === true));
+  const bBlind = !!(rb && ((rb[`blindG${idx}`] ?? rb.blind) === true));
 
-          const [aPts, bPts] = blindAwareOutcome(
-            num(aVal),
-            num(bVal),
-            aBlind,
-            bBlind,
-            INDIV_WIN,
-            INDIV_DRAW
-          );
+  const aVal = ra ? cmpVal(league, aGame, ra?.hcp) : null;
+  const bVal = rb ? cmpVal(league, bGame, rb?.hcp) : null;
 
-          if (aPts) ensure(+ra.playerId).pts += aPts;
-          if (bPts) ensure(+rb.playerId).pts += bPts;
-        }
-      }
+  // Count stats: only if NOT blind and has a non-zero score
+  if (ra && !aBlind && aGame > 0) {
+    const aS = ensure(+ra.playerId);
+    aS.gms += 1;
+    aS.pinss += aGame;
+    aS.pinsh += (league.mode === 'scratch' ? aGame : aGame + num(ra.hcp));
+    aS.hgs = Math.max(aS.hgs, aGame);
+    aS.hgh = Math.max(aS.hgh, aGame + (league.mode === 'scratch' ? 0 : num(ra.hcp)));
+  }
+  if (rb && !bBlind && bGame > 0) {
+    const bS = ensure(+rb.playerId);
+    bS.gms += 1;
+    bS.pinss += bGame;
+    bS.pinsh += (league.mode === 'scratch' ? bGame : bGame + num(rb.hcp));
+    bS.hgs = Math.max(bS.hgs, bGame);
+    bS.hgh = Math.max(bS.hgh, bGame + (league.mode === 'scratch' ? 0 : num(rb.hcp)));
+  }
 
-      if (ra && !ra.blind) {
-        const aS = ensure(+ra.playerId);
-        aS.hss = Math.max(aS.hss, rowScratchSeries(ra));
-        aS.hsh = Math.max(aS.hsh, rowHandicapSeries(league, ra));
-      }
-      if (rb && !rb.blind) {
-        const bS = ensure(+rb.playerId);
-        bS.hss = Math.max(bS.hss, rowScratchSeries(rb));
-        bS.hsh = Math.max(bS.hsh, rowHandicapSeries(league, rb));
-      }
+  // Singles points (blind-aware)
+  if (ra && rb && num(aVal) > 0 && num(bVal) > 0) {
+    const [aPts, bPts] = blindAwareOutcome(
+      num(aVal), num(bVal),
+      aBlind, bBlind,
+      INDIV_WIN, INDIV_DRAW
+    );
+    if (aPts) ensure(+ra.playerId).pts += aPts;
+    if (bPts) ensure(+rb.playerId).pts += bPts;
+  }
+}
+
+
+      function rowScratchSeriesNonBlind(r){
+  const b1 = !!(r.blindG1 ?? r.blind), b2 = !!(r.blindG2 ?? r.blind), b3 = !!(r.blindG3 ?? r.blind);
+  return (b1 ? 0 : num(r.g1)) + (b2 ? 0 : num(r.g2)) + (b3 ? 0 : num(r.g3));
+}
+function rowHandicapSeriesNonBlind(league, r){
+  const b1 = !!(r.blindG1 ?? r.blind), b2 = !!(r.blindG2 ?? r.blind), b3 = !!(r.blindG3 ?? r.blind);
+  const h  = league.mode==='scratch' ? 0 : num(r.hcp);
+  return (b1 ? 0 : num(r.g1)+h) + (b2 ? 0 : num(r.g2)+h) + (b3 ? 0 : num(r.g3)+h);
+}
+
+      if (ra) {
+  const aS = ensure(+ra.playerId);
+  aS.hss = Math.max(aS.hss, rowScratchSeriesNonBlind(ra));
+  aS.hsh = Math.max(aS.hsh, rowHandicapSeriesNonBlind(league, ra));
+}
+if (rb) {
+  const bS = ensure(+rb.playerId);
+  bS.hss = Math.max(bS.hss, rowScratchSeriesNonBlind(rb));
+  bS.hsh = Math.max(bS.hsh, rowHandicapSeriesNonBlind(league, rb));
+}
+
     }
   }
 
@@ -330,20 +346,29 @@ function recomputePlayersUpToWeek(leagueRaw, upToWeek) {
 
   const agg = new Map(); // pid -> { gms, pins }
 const bump = (row) => {
-  if (!row?.playerId || row.blind) return;
+  if (!row?.playerId) return;
+
+  // Per-game blind booleans (fallback to row.blind for old data)
+  const b1 = !!(row.blindG1 ?? row.blind);
+  const b2 = !!(row.blindG2 ?? row.blind);
+  const b3 = !!(row.blindG3 ?? row.blind);
+
+  const g1 = num(row.g1), g2 = num(row.g2), g3 = num(row.g3);
+
+  let played = 0, pins = 0;
+  if (!b1 && g1 > 0) { played += 1; pins += g1; }
+  if (!b2 && g2 > 0) { played += 1; pins += g2; }
+  if (!b3 && g3 > 0) { played += 1; pins += g3; }
+
+  if (played === 0) return;               // nothing to count
+
   const pid = +row.playerId;
   const a = agg.get(pid) || { gms:0, pins:0 };
-
-  const g1 = num(row.g1);
-  const g2 = num(row.g2);
-  const g3 = num(row.g3);
-
-  const played = [row.g1, row.g2, row.g3].filter(v => v !== '' && v != null && v !== undefined).length;
-
   a.gms  += played;
-  a.pins += (g1 + g2 + g3);
+  a.pins += pins;
   agg.set(pid, a);
 };
+
 
   for (const s of sheets) {
     (s.homeGames || []).forEach(bump);
@@ -752,20 +777,30 @@ app.get('/api/match-sheet', (req, res) => {
 function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, useHandicap) {
   const maxRows = Math.max(homeRows.length, awayRows.length);
   let homePts = 0, awayPts = 0;
-  const val = (r, key) => (r ? num(r[key]) + (useHandicap ? num(r.hcp) : 0) : 0);
-  const isBlind = (r) => !!(r && r.blind);
+
+  const gameVal = (r, gk) => {
+    if (!r) return 0;
+    const scratch = num(r[gk]);
+    const hcp = useHandicap ? num(r.hcp) : 0;
+    // add handicap only when a scratch score exists
+    return scratch > 0 ? scratch + hcp : 0;
+  };
+  const isBlindGame = (r, idx) => !!(r && ((r[`blindG${idx}`] ?? r.blind) === true));
+
   for (let i = 0; i < maxRows; i++) {
     const a = homeRows[i], b = awayRows[i];
     if (!a || !b) continue;
     for (const gk of ['g1','g2','g3']) {
-      const av = val(a, gk), bv = val(b, gk);
-      const [aPts, bPts] = blindAwareOutcome(av, bv, isBlind(a), isBlind(b), indivWin, indivDraw);
-      homePts += aPts;
-      awayPts += bPts;
+      const idx = gk[1];
+      const av = gameVal(a, gk);
+      const bv = gameVal(b, gk);
+      const [aPts, bPts] = blindAwareOutcome(av, bv, isBlindGame(a, idx), isBlindGame(b, idx), indivWin, indivDraw);
+      homePts += aPts; awayPts += bPts;
     }
   }
   return { homePts, awayPts };
 }
+
 
 /* ===== Save Match Sheet ===== */
 app.post('/api/match-sheet', requireAuth, (req, res) => {
@@ -818,7 +853,12 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     const useHandicap = league.mode === 'handicap';
 
     const gameTotal = (rows, gKey) =>
-      (rows || []).reduce((s, r) => s + num(r[gKey]) + (useHandicap ? num(r.hcp) : 0), 0);
+  (rows || []).reduce((s, r) => {
+    const scratch = num(r[gKey]);
+    const h = useHandicap ? num(r.hcp) : 0;
+    return s + (scratch > 0 ? scratch + h : 0);
+  }, 0);
+
 
     let homeTeamPts = 0, awayTeamPts = 0;
     for (const gKey of ['g1','g2','g3']) {
@@ -850,18 +890,30 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
   const playersById = new Map((db.data.players || []).map(p => [p.id, p]));
   const teamsById   = new Map((db.data.teams || []).map(t => [t.id, t]));
 
-  const snapshotRow = (row) => {
-    if (!row) return null;
-    const pid = Number(row.playerId) || null;
-    const p   = pid ? playersById.get(pid) : null;
-    return {
-      playerId: pid,
-      playerName: p?.name ?? row.playerName ?? null,
-      g1: num(row.g1), g2: num(row.g2), g3: num(row.g3),
-      hcp: num(row.hcp),
-      blind: !!row.blind
-    };
+ const snapshotRow = (row) => {
+  if (!row) return null;
+  const pid = Number(row.playerId) || null;
+  const p   = pid ? playersById.get(pid) : null;
+
+  // Back-compat: if only `blind` exists, treat it as all three true.
+  const legacyAll = !!row.blind;
+
+  return {
+    playerId: pid,
+    playerName: p?.name ?? row.playerName ?? null,
+    g1: num(row.g1), g2: num(row.g2), g3: num(row.g3),
+    hcp: num(row.hcp),
+
+    // persist per-game blind flags (fallback to legacy boolean)
+    blindG1: !!(row.blindG1 ?? legacyAll),
+    blindG2: !!(row.blindG2 ?? legacyAll),
+    blindG3: !!(row.blindG3 ?? legacyAll),
+
+    // keep legacy field for older readers
+    blind: legacyAll
   };
+};
+
   const snapshotRows = (rows = []) => rows.map(snapshotRow).filter(Boolean);
 
   // Replace any existing snapshot for this exact fixture/week
@@ -909,7 +961,12 @@ function sheetTotalsForMatch(leagueRaw, match) {
 
   // TEAM totals per game (sum across all players)
   const sumGameScratch   = (rows, g) => rows.reduce((a, r) => a + num(r[g]), 0);
-  const sumGameHandicap  = (rows, g) => rows.reduce((a, r) => a + num(r[g]) + num(r.hcp), 0);
+  const sumGameHandicap = (rows, g) => rows.reduce((a, r) => {
+  const scratch = num(r[g]);
+  const h = scratch > 0 ? num(r.hcp) : 0;
+  return a + scratch + h;
+}, 0);
+
 
   const homeGameScratch  = ['g1','g2','g3'].map(g => sumGameScratch(homeRows, g));
   const awayGameScratch  = ['g1','g2','g3'].map(g => sumGameScratch(awayRows, g));
@@ -1133,7 +1190,11 @@ app.get('/api/sheets', (req, res) => {
       // totals (unchanged)
       const nn = v => (Number.isFinite(+v) ? +v : 0);
       const sSeries = r => (nn(r.g1) + nn(r.g2) + nn(r.g3));
-      const hSeries = r => (nn(r.g1)+nn(r.hcp) + nn(r.g2)+nn(r.hcp) + nn(r.g3)+nn(r.hcp));
+      const hSeries = r => {
+  const g1 = nn(r.g1), g2 = nn(r.g2), g3 = nn(r.g3), h = nn(r.hcp);
+  return (g1 > 0 ? g1 + h : g1) + (g2 > 0 ? g2 + h : g2) + (g3 > 0 ? g3 + h : g3);
+};
+
       const homeRows = s.homeGames || [];
       const awayRows = s.awayGames || [];
       const totals = {

@@ -548,15 +548,28 @@ export default function EnterScores() {
     away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
   }
 
-  const save = async () => {
-    if (!sheet) return alert('Pick week and teams, then Load.')
-    const clean = rows => rows
-      .filter(r => r.playerId)
-      .map(r => ({
-        playerId: +r.playerId,
-        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3), hcp: num(r.hcp),
-        blind: !!(r.blindMask && r.blindMask !== 'none')
-      }))
+  // inside EnterScores.jsx
+const clean = rows => rows
+  .filter(r => r.playerId)
+  .map(r => {
+    const mask = r.blindMask || 'none';
+    const blindG1 = mask.includes('1') || mask === 'all';
+    const blindG2 = mask.includes('2') || mask === 'all';
+    const blindG3 = mask.includes('3') || mask === 'all';
+
+    return {
+      playerId: +r.playerId,
+      g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
+      hcp: num(r.hcp),
+
+      // NEW: per-game blind flags
+      blindG1, blindG2, blindG3,
+
+      // Back-compat summary flag (server will ignore if per-game flags exist)
+      blind: (mask !== 'none')
+    };
+  });
+
     const payload = {
       weekNumber: +weekNumber,
       homeTeamId: +homeId,
