@@ -132,15 +132,16 @@ function TeamTable({
     }
   })
 
-  // auto singles per row
-  const autoSinglesPts = rows.map((r, i) => {
-    const opp = opponentRowsProcessed?.[i]
-    if (!opp) return 0
-    const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blindG1, !!opp.blindG1, indivWin, indivDraw)
-    const [g2A] = blindAwareOutcome(r.g2h, opp.g2h, !!r.blindG2, !!opp.blindG2, indivWin, indivDraw)
-    const [g3A] = blindAwareOutcome(r.g3h, opp.g3h, !!r.blindG3, !!opp.blindG3, indivWin, indivDraw)
-    return g1A + g2A + g3A
-  })
+const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
+
+const autoSinglesPts = rows.map((r, i) => {
+  const opp = opponentRowsProcessed?.[i] || VIRTUAL_BLIND;
+  const [g1A] = blindAwareOutcome(r.g1h, opp.g1h, !!r.blindG1, !!opp.blindG1, indivWin, indivDraw);
+  const [g2A] = blindAwareOutcome(r.g2h, opp.g2h, !!r.blindG2, !!opp.blindG2, indivWin, indivDraw);
+  const [g3A] = blindAwareOutcome(r.g3h, opp.g3h, !!r.blindG3, !!opp.blindG3, indivWin, indivDraw);
+  return g1A + g2A + g3A;
+});
+
 
   // totals
   const totals = rows.reduce((a, r) => ({
@@ -506,31 +507,41 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // summary singles — respect overrides
   const singlesTotals = useMemo(() => {
-    const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
-    let homePts = 0, awayPts = 0
+  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
+  const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
 
-    for (let i = 0; i < maxRows; i++) {
-      const rawA = homeVals[i]
-      const rawB = awayVals[i]
-      const a = homeProcessed[i]
-      const b = awayProcessed[i]
+  let homePts = 0, awayPts = 0;
 
-      if (rawA?.indivPts !== undefined && rawA.indivPts !== '') homePts += num(rawA.indivPts)
-      if (rawB?.indivPts !== undefined && rawB.indivPts !== '') awayPts += num(rawB.indivPts)
+  for (let i = 0; i < maxRows; i++) {
+    const aRaw = homeVals[i];
+    const bRaw = awayVals[i];
 
-      if (a && b && (rawA?.indivPts === '' || rawA?.indivPts === undefined) && (rawB?.indivPts === '' || rawB?.indivPts === undefined)) {
-        const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw)
-        const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw)
-        const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw)
-        homePts += a1 + a2 + a3
-        awayPts += b1 + b2 + b3
-      }
+    // If either side is overridden, just add those (blank = no override)
+    const aOverride = aRaw?.indivPts !== undefined && aRaw.indivPts !== '' ? num(aRaw.indivPts) : null;
+    const bOverride = bRaw?.indivPts !== undefined && bRaw.indivPts !== '' ? num(bRaw.indivPts) : null;
+
+    if (aOverride != null || bOverride != null) {
+      if (aOverride != null) homePts += aOverride;
+      if (bOverride != null) awayPts += bOverride;
+      continue;
     }
 
-    return { homePts, awayPts }
-  }, [homeVals, awayVals, homeProcessed, awayProcessed, indivWin, indivDraw])
+    // Otherwise auto-calc with blind-aware comparison
+    const a = homeProcessed[i] || VIRTUAL_BLIND;
+    const b = awayProcessed[i] || VIRTUAL_BLIND;
+
+    const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
+    const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
+    const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
+
+    homePts += a1 + a2 + a3;
+    awayPts += b1 + b2 + b3;
+  }
+
+  return { homePts, awayPts };
+}, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
+
 
   const totalPoints = {
     home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
