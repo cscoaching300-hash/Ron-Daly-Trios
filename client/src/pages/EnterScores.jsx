@@ -75,18 +75,19 @@ function TeamTable({
   indivDraw,
   teamWin,
   teamDraw,
-  useHandicap
+  useHandicap,
+  // NEW:
+  initialRows = 3,
 }) {
   useEffect(() => {
     if (!values.length) {
-      setValues([
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
-        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' },
-      ])
+      const blanks = Array.from({ length: Math.max(1, +initialRows || 3) }, () => (
+        { playerId: '', g1:'', g2:'', g3:'', hcp: 0, blindMask:'none', indivPts:'' }
+      ))
+      setValues(blanks)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [initialRows])
 
   const byId = useMemo(() => {
     const map = new Map()
@@ -99,7 +100,6 @@ function TeamTable({
     [values]
   )
 
-  // build rendered rows
   const rows = values.map(v => {
     const picked   = v.playerId ? byId.get(String(v.playerId)) : null
     const baseAvg  = picked ? num(picked.average) : 0
@@ -142,7 +142,6 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
-  // totals
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
     g2: a.g2 + r.g2s,
@@ -154,7 +153,6 @@ function TeamTable({
     seriesH: a.seriesH + r.seriesH
   }), { g1:0,g2:0,g3:0,g1h:0,g2h:0,g3h:0, series:0, seriesH:0 })
 
-  // opponent totals for team points
   const oppScratchTotals = (opponentRowsRaw || []).reduce((a, r) => ({
     g1: a.g1 + num(r.g1), g2: a.g2 + num(r.g2), g3: a.g3 + num(r.g3)
   }), { g1:0, g2:0, g3:0 })
@@ -182,7 +180,6 @@ function TeamTable({
   const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
-  // singles total, including overrides
   const singlesTotal = rows.reduce((sum, r, idx) => {
     const override = values[idx]?.indivPts
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
@@ -221,7 +218,6 @@ function TeamTable({
               const override = values[idx]?.indivPts
               const effectivePts = override !== undefined && override !== '' ? override : (autoSinglesPts[idx] || 0)
 
-              // display hcp (show reduced if any game blinded)
               const displayHcp =
                 (r.blindG1 || r.blindG2 || r.blindG3)
                   ? Math.floor(r.baseHcp * 0.9)
@@ -248,7 +244,6 @@ function TeamTable({
 
                   <td style={td}>{isJunior ? 'Yes' : ''}</td>
 
-                  {/* Blind dropdown */}
                   <td style={td}>
                     <select
                       value={values[idx]?.blindMask || 'none'}
@@ -298,7 +293,6 @@ function TeamTable({
                   <td style={td}>{r.g3h}</td>
                   <td style={td}>{r.series}</td>
 
-                  {/* editable singles pts */}
                   <td style={td}>
                     <input
                       type="number"
@@ -319,7 +313,6 @@ function TeamTable({
               )
             })}
 
-            {/* totals */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
               <td style={td}>—</td>
@@ -341,7 +334,7 @@ function TeamTable({
               <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>—</td>
-              <td style={td}>{g1Pts}</td>
+              <td style={td}>{rows.length ? (totals.g1h || totals.g1) && 0 + (g1Pts) : 0}</td>
               <td style={td}>{g2Pts}</td>
               <td style={td}>{g3Pts}</td>
               <td style={td}>—</td>
@@ -377,7 +370,7 @@ export default function EnterScores() {
 
   useEffect(() => { getTeams().then(setTeams) }, [])
 
-  // build blindMask from saved per-game flags (fallback to legacy .blind)
+  // derive blindMask from saved row
   const maskFromSavedRow = (r = {}) => {
     const g1 = !!r.blindG1, g2 = !!r.blindG2, g3 = !!r.blindG3
     if (g1 && g2 && g3) return 'all'
@@ -423,25 +416,18 @@ export default function EnterScores() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, params])
 
+  const makeBlanks = (n) =>
+    Array.from({ length: Math.max(1, +n || 3) }, () => ({ playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:'' }))
+
   const load = async (wk = +weekNumber, h = +homeId, a = +awayId) => {
     if (!wk || !h || !a) return
     const data = await getMatchSheet(+wk, +h, +a)
     setSheet(data)
 
-    if (!homeVals.length) {
-      setHomeVals([
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-      ])
-    }
-    if (!awayVals.length) {
-      setAwayVals([
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-        {playerId:'',g1:'',g2:'',g3:'',hcp:0, blindMask:'none', indivPts:''},
-      ])
-    }
+    const teamSize = Math.max(1, Math.min(6, +data?.league?.teamSize || 3))
+
+    if (!homeVals.length) setHomeVals(makeBlanks(teamSize))
+    if (!awayVals.length) setAwayVals(makeBlanks(teamSize))
   }
 
   const gamesPerWeek = +sheet?.league?.gamesPerWeek || 3
@@ -450,6 +436,7 @@ export default function EnterScores() {
   const teamWin  = +sheet?.league?.teamPointsWin || 0
   const teamDraw = +sheet?.league?.teamPointsDraw || 0
   const useHandicap = (sheet?.league?.mode === 'handicap')
+  const teamSize = Math.max(1, Math.min(6, +sheet?.league?.teamSize || 3))
 
   const processedForSummary = (rows) => rows.map(r => {
     const baseH = num(r.hcp)
@@ -518,45 +505,13 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  const singlesTotals = useMemo(() => {
-    const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true }
-    const maxRows = Math.max(homeProcessed.length, awayProcessed.length)
-
-    let homePts = 0, awayPts = 0
-
-    for (let i = 0; i < maxRows; i++) {
-      const aRaw = homeVals[i]
-      const bRaw = awayVals[i]
-
-      const aOverride = aRaw?.indivPts !== undefined && aRaw.indivPts !== '' ? num(aRaw.indivPts) : null
-      const bOverride = bRaw?.indivPts !== undefined && bRaw.indivPts !== '' ? num(bRaw.indivPts) : null
-
-      if (aOverride != null || bOverride != null) {
-        if (aOverride != null) homePts += aOverride
-        if (bOverride != null) awayPts += bOverride
-        continue
-      }
-
-      const a = homeProcessed[i] || VIRTUAL_BLIND
-      const b = awayProcessed[i] || VIRTUAL_BLIND
-
-      const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw)
-      const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw)
-      const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw)
-
-      homePts += a1 + a2 + a3
-      awayPts += b1 + b2 + b3
-    }
-
-    return { homePts, awayPts }
-  }, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw])
+as you can see I have got the individual points and team points correct on the sheet - however when it comes to the 
 
   const totalPoints = {
     home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
     away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
   }
 
-  // ---------- SAVE (async) ----------
   const clean = rows => rows
     .filter(r => r.playerId)
     .map(r => {
@@ -627,7 +582,7 @@ export default function EnterScores() {
         </div>
       </div>
 
-      {/* tables */}
+      {/* both team tables */}
       <div style={{
         display:'flex',
         gap:12,
@@ -641,14 +596,15 @@ export default function EnterScores() {
           subOptions={sheet?.homeSubs || []}
           values={homeVals}
           setValues={setHomeVals}
-          gamesPerWeek={+sheet?.league?.gamesPerWeek || 3}
+          gamesPerWeek={gamesPerWeek}
           opponentRowsProcessed={awayProcessed}
           opponentRowsRaw={awayVals}
-          indivWin={+sheet?.league?.indivPointsWin || 0}
-          indivDraw={+sheet?.league?.indivPointsDraw || 0}
-          teamWin={+sheet?.league?.teamPointsWin || 0}
-          teamDraw={+sheet?.league?.teamPointsDraw || 0}
-          useHandicap={(sheet?.league?.mode === 'handicap')}
+          indivWin={indivWin}
+          indivDraw={indivDraw}
+          teamWin={teamWin}
+          teamDraw={teamDraw}
+          useHandicap={useHandicap}
+          initialRows={teamSize}
         />
         <TeamTable
           title={sheet?.awayTeam?.name || 'Team B'}
@@ -656,14 +612,15 @@ export default function EnterScores() {
           subOptions={sheet?.awaySubs || []}
           values={awayVals}
           setValues={setAwayVals}
-          gamesPerWeek={+sheet?.league?.gamesPerWeek || 3}
+          gamesPerWeek={gamesPerWeek}
           opponentRowsProcessed={homeProcessed}
           opponentRowsRaw={homeVals}
-          indivWin={+sheet?.league?.indivPointsWin || 0}
-          indivDraw={+sheet?.league?.indivPointsDraw || 0}
-          teamWin={+sheet?.league?.teamPointsWin || 0}
-          teamDraw={+sheet?.league?.teamPointsDraw || 0}
-          useHandicap={(sheet?.league?.mode === 'handicap')}
+          indivWin={indivWin}
+          indivDraw={indivDraw}
+          teamWin={teamWin}
+          teamDraw={teamDraw}
+          useHandicap={useHandicap}
+          initialRows={teamSize}
         />
       </div>
 
@@ -677,7 +634,7 @@ export default function EnterScores() {
           </div>
           <div style={{fontSize:18}}>
             <strong>Team Points (games + series):</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {totalPoints.home - (singlesTotals.homePts || 0)} — {totalPoints.away - (singlesTotals.awayPts || 0)} {(sheet?.awayTeam?.name || 'Team B')}
+            {(sheet?.homeTeam?.name || 'Team A')} {teamPoints.home} — {teamPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:14}}>
             Team points are awarded for each game and the series (handicap rules apply if enabled).
@@ -698,3 +655,4 @@ export default function EnterScores() {
     </div>
   )
 }
+
