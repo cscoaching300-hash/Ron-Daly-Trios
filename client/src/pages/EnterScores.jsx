@@ -142,6 +142,21 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
+// Keep indivPts in sync with the auto calc when empty.
+// This ensures the table's Team Totals Pts and the summary use the same numbers.
+useEffect(() => {
+  setValues(list =>
+    list.map((x, i) => {
+      const hasOverride = x.indivPts !== '' && x.indivPts !== undefined && x.indivPts !== null;
+      if (hasOverride) return x;                       // user override stays
+      const auto = autoSinglesPts[i] || 0;             // use the auto value
+      return { ...x, indivPts: String(auto) };
+    })
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [autoSinglesPts]);
+
+
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
     g2: a.g2 + r.g2s,
@@ -516,15 +531,12 @@ const processedForSummary = (rows) => rows.map(r => {
 //   - if a row has an override (indivPts), use it
 //   - else auto-calc via blind-aware head-to-head vs the same index (virtual blind if missing)
 
+// Singles totals for the summary: just sum the Pts that each table shows
 const singlesTotals = useMemo(() => {
-  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
-  const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
-
-  let homePts = 0, awayPts = 0;
-
-  for (let i = 0; i < maxRows; i++) {
-    const aRaw = homeVals[i];
-    const bRaw = awayVals[i];
+  const homePts = (homeVals || []).reduce((s, r) => s + num(r.indivPts), 0);
+  const awayPts = (awayVals || []).reduce((s, r) => s + num(r.indivPts), 0);
+  return { homePts, awayPts };
+}, [homeVals, awayVals]);
 
     // Use overrides if present (string '' means “no override”)
     const aOverride = (aRaw && aRaw.indivPts !== undefined && aRaw.indivPts !== '') ? num(aRaw.indivPts) : null;
