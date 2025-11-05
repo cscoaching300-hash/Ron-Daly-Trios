@@ -77,8 +77,10 @@ function TeamTable({
   teamDraw,
   useHandicap,
   initialRows = 3,
-  // NEW: bubble up the exact singles total shown in this table
   onSinglesTotalChange,
+  // If true: we loaded a saved sheet; keep existing rows' HCP as-is
+  // (but if you change the player on a row, we'll still auto-fill the new player's HCP)
+  lockHcp = false,
 }) {
   useEffect(() => {
     if (!values.length) {
@@ -101,10 +103,11 @@ function TeamTable({
     [values]
   )
 
+  // ---- calculations use the row's editable HCP (v.hcp) ----
   const rows = values.map(v => {
     const picked   = v.playerId ? byId.get(String(v.playerId)) : null
     const baseAvg  = picked ? num(picked.average) : 0
-    const baseHcp  = picked ? num(picked.hcp) : num(v.hcp)
+    const baseHcp  = num(v.hcp) // <— always the row's current (editable) HCP
 
     const blindScore = Math.floor(baseAvg * 0.9)
     const blindHcp   = Math.floor(baseHcp * 0.9)
@@ -143,7 +146,6 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
-  // Totals for team scratch/handicap
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
     g2: a.g2 + r.g2s,
@@ -182,14 +184,12 @@ function TeamTable({
   const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
-  // Singles Total shown in the table = sum of the *displayed* per-row Pts (override OR auto)
   const singlesTotal = rows.reduce((sum, r, idx) => {
     const override = values[idx]?.indivPts
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
     return sum + eff
   }, 0)
 
-  // REPORT singles total to parent (so summary copies it verbatim)
   useEffect(() => {
     if (typeof onSinglesTotalChange === 'function') onSinglesTotalChange(singlesTotal)
   }, [singlesTotal, onSinglesTotalChange])
@@ -239,9 +239,14 @@ function TeamTable({
                       onChange={(id) => {
                         setValues(list => list.map((x,i)=>{
                           if (i !== idx) return x
-                          const picked = id ? byId.get(String(id)) : null
-                          const baseHcp = picked ? (num(picked.hcp) || 0) : 0
-                          return { ...x, playerId:id, hcp: baseHcp, blindMask:'none', indivPts:'' }
+                          const pickedNew = id ? byId.get(String(id)) : null
+                          // If we're in frozen mode and you didn't actually change the player, keep the snapshot HCP.
+                          // Otherwise (new player picked), auto-fill with that player's current HCP.
+                          const nextHcp =
+                            (lockHcp && String(id) === String(x.playerId))
+                              ? num(x.hcp || 0)
+                              : (pickedNew ? num(pickedNew.hcp) : 0)
+                          return { ...x, playerId:id, hcp: nextHcp, blindMask:'none', indivPts:'' }
                         }))
                       }}
                       teamOptions={teamOptions || []}
@@ -260,8 +265,8 @@ function TeamTable({
                         const mask = e.target.value
                         setValues(list => list.map((x,i)=>{
                           if (i !== idx) return x
-                          const picked = x.playerId ? byId.get(String(x.playerId)) : null
-                          const baseAvg = picked ? num(picked.average) : 0
+                          const pickedRow = x.playerId ? byId.get(String(x.playerId)) : null
+                          const baseAvg = pickedRow ? num(pickedRow.average) : 0
                           const blindScore = Math.floor(baseAvg * 0.9)
                           const next = { ...x, blindMask: mask, indivPts:'' }
 
@@ -279,7 +284,19 @@ function TeamTable({
                     </select>
                   </td>
 
-                  <td style={td}>{displayHcp || 0}</td>
+                  {/* Editable HCP (raw). G+H columns show reduced HCP automatically for blinded games */}
+                  <td style={td}>
+                    <input
+                      type="number"
+                      min="0"
+                      style={{width:64, textAlign:'center'}}
+                      value={values[idx]?.hcp ?? 0}
+                      onChange={e => {
+                        const v = e.target.value
+                        setValues(list => list.map((x,i)=> i===idx ? { ...x, hcp: v } : x))
+                      }}
+                    />
+                  </td>
 
                   {['g1','g2','g3'].map(k=>(
                     <td key={k} style={td}>
@@ -336,7 +353,10 @@ function TeamTable({
               <td style={td}>{totals.g2h}</td>
               <td style={td}>{totals.g3h}</td>
               <td style={td}>{totals.series}</td>
-              <td style={{...td, fontWeight:700}}>{singlesTotal}</td>
+              <td style={{...td, fontWeight:700}}>{rows.reduce((s, _, i) => {
+                const v = values[i]?.indivPts
+                return s + (v !== undefined && v !== '' ? num(v) : (autoSinglesPts[i] || 0))
+              }, 0)}</td>
               <td style={td}>—</td>
             </tr>
 
@@ -376,9 +396,11 @@ export default function EnterScores() {
   const [homeVals, setHomeVals] = useState([])
   const [awayVals, setAwayVals] = useState([])
 
-  // NEW: hold the exact singles totals reported by each table
   const [homeSingles, setHomeSingles] = useState(0)
   const [awaySingles, setAwaySingles] = useState(0)
+
+  // are we editing a saved sheet? If yes, lock existing rows' HCP (we still allow manual edits)
+  const [lockHcp, setLockHcp] = useState(false)
 
   const location = useLocation()
   const [params] = useSearchParams()
@@ -413,6 +435,7 @@ export default function EnterScores() {
       fetch(`/api/sheet?${qs}`, { headers: getAuthHeaders() })
         .then(r => (r.ok ? r.json() : null))
         .then(s => {
+          setLockHcp(!!s)
           if (!s) return
           const shape = r => ({
             playerId: String(r.playerId || ''),
@@ -444,7 +467,6 @@ export default function EnterScores() {
     if (!homeVals.length) setHomeVals(makeBlanks(teamSize))
     if (!awayVals.length) setAwayVals(makeBlanks(teamSize))
 
-    // reset singles mirrors when loading a new sheet
     setHomeSingles(0)
     setAwaySingles(0)
   }
@@ -457,7 +479,9 @@ export default function EnterScores() {
   const useHandicap = (sheet?.league?.mode === 'handicap')
   const teamSize = Math.max(1, Math.min(6, +sheet?.league?.teamSize || 3))
 
-  // processed for summary — use entered numbers (blind scores already applied in inputs)
+  // processed for summary — DO NOT re-apply 0.9 to blind game scores,
+  // the input cells already hold the blind score. Only reduce the HCP
+  // for the specific blind games.
   const processedForSummary = (rows) => rows.map(r => {
     const baseH = num(r.hcp);
     const blindH = Math.floor(baseH * 0.9);
@@ -525,11 +549,8 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // Summary singles = EXACTLY what tables show (mirrored from children)
-  const singlesTotals = {
-    homePts: homeSingles || 0,
-    awayPts: awaySingles || 0,
-  }
+  // Summary singles are just the "Pts" totals shown in each table
+  const singlesTotals = { homePts: homeSingles || 0, awayPts: awaySingles || 0 }
 
   const totalPoints = {
     home: (teamPoints.home || 0) + singlesTotals.homePts,
@@ -630,6 +651,7 @@ export default function EnterScores() {
           useHandicap={useHandicap}
           initialRows={teamSize}
           onSinglesTotalChange={setHomeSingles}
+          lockHcp={lockHcp}
         />
         <TeamTable
           title={sheet?.awayTeam?.name || 'Team B'}
@@ -647,6 +669,7 @@ export default function EnterScores() {
           useHandicap={useHandicap}
           initialRows={teamSize}
           onSinglesTotalChange={setAwaySingles}
+          lockHcp={lockHcp}
         />
       </div>
 
@@ -660,14 +683,54 @@ export default function EnterScores() {
           </div>
           <div style={{fontSize:18}}>
             <strong>Team Points (games + series):</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {teamPoints.home} — {teamPoints.away} {(sheet?.awayTeam?.name || 'Team B')}
+            {(sheet?.homeTeam?.name || 'Team A')} {(() => {
+              const g = ['g1','g2','g3']
+              const homeGames = g.reduce((acc, gk) => {
+                const homeVal = (useHandicap
+                  ? homeProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1h:gk==='g2'?r.g2h:r.g3h),0)
+                  : homeProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1s:gk==='g2'?r.g2s:r.g3s),0))
+                const awayVal = (useHandicap
+                  ? awayProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1h:gk==='g2'?r.g2h:r.g3h),0)
+                  : awayProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1s:gk==='g2'?r.g2s:r.g3s),0))
+                const [hPts, aPts] = blindAwareOutcome(homeVal, awayVal, false, false, +sheet?.league?.teamPointsWin || 0, +sheet?.league?.teamPointsDraw || 0)
+                return { home: acc.home + hPts, away: acc.away + aPts }
+              }, { home:0, away:0 })
+              const seriesHome = useHandicap
+                ? homeProcessed.reduce((s,r)=> s + r.g1h + r.g2h + r.g3h, 0)
+                : homeProcessed.reduce((s,r)=> s + r.g1s + r.g2s + r.g3s, 0)
+              const seriesAway = useHandicap
+                ? awayProcessed.reduce((s,r)=> s + r.g1h + r.g2h + r.g3h, 0)
+                : awayProcessed.reduce((s,r)=> s + r.g1s + r.g2s + r.g3s, 0)
+              const [sH, sA] = blindAwareOutcome(seriesHome, seriesAway, false, false, +sheet?.league?.teamPointsWin || 0, +sheet?.league?.teamPointsDraw || 0)
+              return homeGames.home + sH
+            })()} — {(() => {
+              const g = ['g1','g2','g3']
+              const awayGames = g.reduce((acc, gk) => {
+                const homeVal = (useHandicap
+                  ? homeProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1h:gk==='g2'?r.g2h:r.g3h),0)
+                  : homeProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1s:gk==='g2'?r.g2s:r.g3s),0))
+                const awayVal = (useHandicap
+                  ? awayProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1h:gk==='g2'?r.g2h:r.g3h),0)
+                  : awayProcessed.reduce((s,r)=> s + (gk==='g1'?r.g1s:gk==='g2'?r.g2s:r.g3s),0))
+                const [hPts, aPts] = blindAwareOutcome(homeVal, awayVal, false, false, +sheet?.league?.teamPointsWin || 0, +sheet?.league?.teamPointsDraw || 0)
+                return { home: acc.home + hPts, away: acc.away + aPts }
+              }, { home:0, away:0 })
+              const seriesHome = useHandicap
+                ? homeProcessed.reduce((s,r)=> s + r.g1h + r.g2h + r.g3h, 0)
+                : homeProcessed.reduce((s,r)=> s + r.g1s + r.g2s + r.g3s, 0)
+              const seriesAway = useHandicap
+                ? awayProcessed.reduce((s,r)=> s + r.g1h + r.g2h + r.g3h, 0)
+                : awayProcessed.reduce((s,r)=> s + r.g1s + r.g2s + r.g3s, 0)
+              const [sH, sA] = blindAwareOutcome(seriesHome, seriesAway, false, false, +sheet?.league?.teamPointsWin || 0, +sheet?.league?.teamPointsDraw || 0)
+              return awayGames.away + sA
+            })()} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:14}}>
             Team points are awarded for each game and the series (handicap rules apply if enabled).
           </div>
           <div style={{fontSize:18, marginTop:8}}>
             <strong>Singles Points:</strong>{' '}
-            {(sheet?.homeTeam?.name || 'Team A')} {singlesTotals.homePts} — {singlesTotals.awayPts} {(sheet?.awayTeam?.name || 'Team B')}
+            {(sheet?.homeTeam?.name || 'Team A')} {homeSingles} — {awaySingles} {(sheet?.awayTeam?.name || 'Team B')}
           </div>
           <div className="muted" style={{fontSize:12}}>
             Edit the Pts field next to each bowler to override.
