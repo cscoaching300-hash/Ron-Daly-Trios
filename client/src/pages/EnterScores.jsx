@@ -437,15 +437,18 @@ export default function EnterScores() {
         .then(s => {
           setLockHcp(!!s)
           if (!s) return
-          const shape = r => ({
-            playerId: String(r.playerId || ''),
-            g1: String(r.g1 || ''),
-            g2: String(r.g2 || ''),
-            g3: String(r.g3 || ''),
-            hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
-            blindMask: maskFromSavedRow(r),
-            indivPts: ''
-          })
+      const shape = r => ({
+  playerId: String(r.playerId || ''),
+  g1: String(r.g1 || ''),
+  g2: String(r.g2 || ''),
+  g3: String(r.g3 || ''),
+  hcp: Number.isFinite(+r.hcp) ? +r.hcp : 0,
+  blindMask: maskFromSavedRow(r),
+
+  // ✅ show saved override, or blank if none
+  indivPts: (r.indivPts !== undefined && r.indivPts !== null) ? String(r.indivPts) : ''
+});
+
           setHomeVals((s.homeGames || []).map(shape))
           setAwayVals((s.awayGames || []).map(shape))
         })
