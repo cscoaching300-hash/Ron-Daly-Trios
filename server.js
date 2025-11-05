@@ -782,14 +782,25 @@ function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, use
     if (!r) return 0;
     const scratch = num(r[gk]);
     const hcp = useHandicap ? num(r.hcp) : 0;
-    // add handicap only when a scratch score exists
     return scratch > 0 ? scratch + hcp : 0;
   };
   const isBlindGame = (r, idx) => !!(r && ((r[`blindG${idx}`] ?? r.blind) === true));
 
   for (let i = 0; i < maxRows; i++) {
     const a = homeRows[i], b = awayRows[i];
+
+    // If either side has an indivPts override on this row, use those totals for singles
+    const aOverride = (a && a.indivPts !== undefined && a.indivPts !== null) ? num(a.indivPts) : null;
+    const bOverride = (b && b.indivPts !== undefined && b.indivPts !== null) ? num(b.indivPts) : null;
+
+    if (aOverride != null || bOverride != null) {
+      if (aOverride != null) homePts += aOverride;
+      if (bOverride != null) awayPts += bOverride;
+      continue;
+    }
+
     if (!a || !b) continue;
+
     for (const gk of ['g1','g2','g3']) {
       const idx = gk[1];
       const av = gameVal(a, gk);
@@ -800,6 +811,7 @@ function computeSinglesTotalsServer(homeRows, awayRows, indivWin, indivDraw, use
   }
   return { homePts, awayPts };
 }
+
 
 
 /* ===== Save Match Sheet ===== */
