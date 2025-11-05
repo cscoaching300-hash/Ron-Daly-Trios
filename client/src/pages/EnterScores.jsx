@@ -526,21 +526,22 @@ const processedForSummary = (rows) => rows.map(r => {
     away: perGame.away + seriesAwayPts
   }
 
-  // --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
-// Uses the same effective-per-row logic as the tables:
-//   - if a row has an override (indivPts), use it
-//   - else auto-calc via blind-aware head-to-head vs the same index (virtual blind if missing)
-
-// Singles totals for the summary: just sum the Pts that each table shows
+// --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
+// Mirrors the table logic: if a row has an override (indivPts) use it,
+// otherwise auto-calc via blind-aware head-to-head against the same index.
 const singlesTotals = useMemo(() => {
-  const homePts = (homeVals || []).reduce((s, r) => s + num(r.indivPts), 0);
-  const awayPts = (awayVals || []).reduce((s, r) => s + num(r.indivPts), 0);
-  return { homePts, awayPts };
-}, [homeVals, awayVals]);
+  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
 
-    // Use overrides if present (string '' means “no override”)
-    const aOverride = (aRaw && aRaw.indivPts !== undefined && aRaw.indivPts !== '') ? num(aRaw.indivPts) : null;
-    const bOverride = (bRaw && bRaw.indivPts !== undefined && bRaw.indivPts !== '') ? num(bRaw.indivPts) : null;
+  let homePts = 0, awayPts = 0;
+  const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
+
+  for (let i = 0; i < maxRows; i++) {
+    const aRaw = homeVals[i];
+    const bRaw = awayVals[i];
+
+    // Use overrides if present ('' means no override)
+    const aOverride = (aRaw && aRaw.indivPts !== '' && aRaw.indivPts !== undefined) ? num(aRaw.indivPts) : null;
+    const bOverride = (bRaw && bRaw.indivPts !== '' && bRaw.indivPts !== undefined) ? num(bRaw.indivPts) : null;
 
     if (aOverride != null || bOverride != null) {
       if (aOverride != null) homePts += aOverride;
@@ -548,13 +549,13 @@ const singlesTotals = useMemo(() => {
       continue;
     }
 
-    // Otherwise use the same auto head-to-head the tables use
+    // Otherwise auto head-to-head (exactly like tables)
     const a = homeProcessed[i] || VIRTUAL_BLIND;
     const b = awayProcessed[i] || VIRTUAL_BLIND;
 
-    const [a1,b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
-    const [a2,b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
-    const [a3,b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
+    const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
+    const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
+    const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
 
     homePts += a1 + a2 + a3;
     awayPts += b1 + b2 + b3;
@@ -564,10 +565,10 @@ const singlesTotals = useMemo(() => {
 }, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
 
 
-  const totalPoints = {
-    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
-    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
-  }
+const totalPoints = {
+  home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
+  away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
+};
 
   const clean = rows => rows
     .filter(r => r.playerId)
