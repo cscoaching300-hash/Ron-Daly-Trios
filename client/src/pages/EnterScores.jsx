@@ -142,20 +142,19 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
-// Keep indivPts in sync with the auto calc when empty.
-// This ensures the table's Team Totals Pts and the summary use the same numbers.
-useEffect(() => {
-  setValues(list =>
-    list.map((x, i) => {
-      const hasOverride = x.indivPts !== '' && x.indivPts !== undefined && x.indivPts !== null;
-      if (hasOverride) return x;                       // user override stays
-      const auto = autoSinglesPts[i] || 0;             // use the auto value
-      return { ...x, indivPts: String(auto) };
-    })
-  );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [autoSinglesPts]);
-
+  // Keep indivPts in sync with the auto calc when empty.
+  // This ensures the table's Team Totals Pts and the summary use the same numbers.
+  useEffect(() => {
+    setValues(list =>
+      list.map((x, i) => {
+        const hasOverride = x.indivPts !== '' && x.indivPts !== undefined && x.indivPts !== null;
+        if (hasOverride) return x;                       // user override stays
+        const auto = autoSinglesPts[i] || 0;             // use the auto value
+        return { ...x, indivPts: String(auto) };
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSinglesPts]);
 
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
@@ -349,7 +348,7 @@ useEffect(() => {
               <td style={td}>—</td>
               <td style={td}>—</td>
               <td style={td}>—</td>
-              <td style={td}>{rows.length ? (totals.g1h || totals.g1) && 0 + (g1Pts) : 0}</td>
+              <td style={td}>{g1Pts}</td>
               <td style={td}>{g2Pts}</td>
               <td style={td}>{g3Pts}</td>
               <td style={td}>—</td>
@@ -454,36 +453,35 @@ export default function EnterScores() {
   const teamSize = Math.max(1, Math.min(6, +sheet?.league?.teamSize || 3))
 
   // processed for summary — DO NOT re-apply 0.9 to blind game scores,
-// the input cells already hold the blind score. Only reduce the HCP
-// for the specific blind games.
-const processedForSummary = (rows) => rows.map(r => {
-  const baseH = num(r.hcp);
-  const blindH = Math.floor(baseH * 0.9);
-  const mask = r.blindMask || 'none';
+  // the input cells already hold the blind score. Only reduce the HCP
+  // for the specific blind games.
+  const processedForSummary = (rows) => rows.map(r => {
+    const baseH = num(r.hcp);
+    const blindH = Math.floor(baseH * 0.9);
+    const mask = r.blindMask || 'none';
 
-  // Use the entered numbers as-is (they're already set to blind score if blinded)
-  const g1s = num(r.g1);
-  const g2s = num(r.g2);
-  const g3s = num(r.g3);
+    // Use the entered numbers as-is (they're already set to blind score if blinded)
+    const g1s = num(r.g1);
+    const g2s = num(r.g2);
+    const g3s = num(r.g3);
 
-  // Per-game handicap reduction only when that game is blinded
-  const h1 = maskHas(mask, 1) ? blindH : baseH;
-  const h2 = maskHas(mask, 2) ? blindH : baseH;
-  const h3 = maskHas(mask, 3) ? blindH : baseH;
+    // Per-game handicap reduction only when that game is blinded
+    const h1 = maskHas(mask, 1) ? blindH : baseH;
+    const h2 = maskHas(mask, 2) ? blindH : baseH;
+    const h3 = maskHas(mask, 3) ? blindH : baseH;
 
-  return {
-    ...r,
-    g1s, g2s, g3s,
-    h1, h2, h3,
-    g1h: addIfScore(g1s, h1),
-    g2h: addIfScore(g2s, h2),
-    g3h: addIfScore(g3s, h3),
-    blindG1: maskHas(mask, 1),
-    blindG2: maskHas(mask, 2),
-    blindG3: maskHas(mask, 3),
-  };
-});
-
+    return {
+      ...r,
+      g1s, g2s, g3s,
+      h1, h2, h3,
+      g1h: addIfScore(g1s, h1),
+      g2h: addIfScore(g2s, h2),
+      g3h: addIfScore(g3s, h3),
+      blindG1: maskHas(mask, 1),
+      blindG2: maskHas(mask, 2),
+      blindG3: maskHas(mask, 3),
+    };
+  });
 
   const homeProcessed = processedForSummary(homeVals)
   const awayProcessed = processedForSummary(awayVals)
@@ -526,49 +524,48 @@ const processedForSummary = (rows) => rows.map(r => {
     away: perGame.away + seriesAwayPts
   }
 
-// --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
-// Mirrors the table logic: if a row has an override (indivPts) use it,
-// otherwise auto-calc via blind-aware head-to-head against the same index.
-const singlesTotals = useMemo(() => {
-  const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
+  // --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
+  // Mirrors the table logic: if a row has an override (indivPts) use it,
+  // otherwise auto-calc via blind-aware head-to-head against the same index.
+  const singlesTotals = useMemo(() => {
+    const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
 
-  let homePts = 0, awayPts = 0;
-  const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
+    let homePts = 0, awayPts = 0;
+    const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
 
-  for (let i = 0; i < maxRows; i++) {
-    const aRaw = homeVals[i];
-    const bRaw = awayVals[i];
+    for (let i = 0; i < maxRows; i++) {
+      const aRaw = homeVals[i];
+      const bRaw = awayVals[i];
 
-    // Use overrides if present ('' means no override)
-    const aOverride = (aRaw && aRaw.indivPts !== '' && aRaw.indivPts !== undefined) ? num(aRaw.indivPts) : null;
-    const bOverride = (bRaw && bRaw.indivPts !== '' && bRaw.indivPts !== undefined) ? num(bRaw.indivPts) : null;
+      // Use overrides if present ('' means no override)
+      const aOverride = (aRaw && aRaw.indivPts !== '' && aRaw.indivPts !== undefined) ? num(aRaw.indivPts) : null;
+      const bOverride = (bRaw && bRaw.indivPts !== '' && bRaw.indivPts !== undefined) ? num(bRaw.indivPts) : null;
 
-    if (aOverride != null || bOverride != null) {
-      if (aOverride != null) homePts += aOverride;
-      if (bOverride != null) awayPts += bOverride;
-      continue;
+      if (aOverride != null || bOverride != null) {
+        if (aOverride != null) homePts += aOverride;
+        if (bOverride != null) awayPts += bOverride;
+        continue;
+      }
+
+      // Otherwise auto head-to-head (exactly like tables)
+      const a = homeProcessed[i] || VIRTUAL_BLIND;
+      const b = awayProcessed[i] || VIRTUAL_BLIND;
+
+      const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
+      const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
+      const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
+
+      homePts += a1 + a2 + a3;
+      awayPts += b1 + b2 + b3;
     }
 
-    // Otherwise auto head-to-head (exactly like tables)
-    const a = homeProcessed[i] || VIRTUAL_BLIND;
-    const b = awayProcessed[i] || VIRTUAL_BLIND;
+    return { homePts, awayPts };
+  }, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
 
-    const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
-    const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
-    const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
-
-    homePts += a1 + a2 + a3;
-    awayPts += b1 + b2 + b3;
-  }
-
-  return { homePts, awayPts };
-}, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
-
-
-const totalPoints = {
-  home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
-  away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
-};
+  const totalPoints = {
+    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
+    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
+  };
 
   const clean = rows => rows
     .filter(r => r.playerId)
@@ -713,4 +710,3 @@ const totalPoints = {
     </div>
   )
 }
-
