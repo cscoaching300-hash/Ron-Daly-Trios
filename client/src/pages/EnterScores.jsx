@@ -76,7 +76,6 @@ function TeamTable({
   teamWin,
   teamDraw,
   useHandicap,
-  // NEW:
   initialRows = 3,
 }) {
   useEffect(() => {
@@ -142,20 +141,7 @@ function TeamTable({
     return g1A + g2A + g3A
   })
 
-  // Keep indivPts in sync with the auto calc when empty.
-  // This ensures the table's Team Totals Pts and the summary use the same numbers.
-  useEffect(() => {
-    setValues(list =>
-      list.map((x, i) => {
-        const hasOverride = x.indivPts !== '' && x.indivPts !== undefined && x.indivPts !== null;
-        if (hasOverride) return x;                       // user override stays
-        const auto = autoSinglesPts[i] || 0;             // use the auto value
-        return { ...x, indivPts: String(auto) };
-      })
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSinglesPts]);
-
+  // Totals for team scratch/handicap
   const totals = rows.reduce((a, r) => ({
     g1: a.g1 + r.g1s,
     g2: a.g2 + r.g2s,
@@ -194,6 +180,7 @@ function TeamTable({
   const [seriesPts] = blindAwareOutcome(seriesUs, seriesThem, false, false, teamWin, teamDraw)
   const teamPtsTotal = g1Pts + g2Pts + g3Pts + seriesPts
 
+  // Singles Total shown in the table = sum of the *displayed* per-row Pts (override OR auto)
   const singlesTotal = rows.reduce((sum, r, idx) => {
     const override = values[idx]?.indivPts
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
@@ -258,6 +245,7 @@ function TeamTable({
 
                   <td style={td}>{isJunior ? 'Yes' : ''}</td>
 
+                  {/* Blind dropdown */}
                   <td style={td}>
                     <select
                       value={values[idx]?.blindMask || 'none'}
@@ -307,6 +295,7 @@ function TeamTable({
                   <td style={td}>{r.g3h}</td>
                   <td style={td}>{r.series}</td>
 
+                  {/* editable singles pts */}
                   <td style={td}>
                     <input
                       type="number"
@@ -327,6 +316,7 @@ function TeamTable({
               )
             })}
 
+            {/* totals */}
             <tr>
               <td style={{...td, fontWeight:700}}>Team Totals</td>
               <td style={td}>—</td>
@@ -460,12 +450,10 @@ export default function EnterScores() {
     const blindH = Math.floor(baseH * 0.9);
     const mask = r.blindMask || 'none';
 
-    // Use the entered numbers as-is (they're already set to blind score if blinded)
     const g1s = num(r.g1);
     const g2s = num(r.g2);
     const g3s = num(r.g3);
 
-    // Per-game handicap reduction only when that game is blinded
     const h1 = maskHas(mask, 1) ? blindH : baseH;
     const h2 = maskHas(mask, 2) ? blindH : baseH;
     const h3 = maskHas(mask, 3) ? blindH : baseH;
@@ -525,8 +513,7 @@ export default function EnterScores() {
   }
 
   // --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
-  // Mirrors the table logic: if a row has an override (indivPts) use it,
-  // otherwise auto-calc via blind-aware head-to-head against the same index.
+  // Uses override if present, else live head-to-head (no series bonus).
   const singlesTotals = useMemo(() => {
     const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
 
@@ -537,7 +524,6 @@ export default function EnterScores() {
       const aRaw = homeVals[i];
       const bRaw = awayVals[i];
 
-      // Use overrides if present ('' means no override)
       const aOverride = (aRaw && aRaw.indivPts !== '' && aRaw.indivPts !== undefined) ? num(aRaw.indivPts) : null;
       const bOverride = (bRaw && bRaw.indivPts !== '' && bRaw.indivPts !== undefined) ? num(bRaw.indivPts) : null;
 
@@ -547,7 +533,6 @@ export default function EnterScores() {
         continue;
       }
 
-      // Otherwise auto head-to-head (exactly like tables)
       const a = homeProcessed[i] || VIRTUAL_BLIND;
       const b = awayProcessed[i] || VIRTUAL_BLIND;
 
