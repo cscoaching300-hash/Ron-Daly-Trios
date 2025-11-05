@@ -744,5 +744,3 @@ export default function EnterScores() {
     </div>
   )
 }
-
-

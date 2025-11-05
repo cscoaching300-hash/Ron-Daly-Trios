@@ -904,7 +904,7 @@ app.post('/api/match-sheet', requireAuth, (req, res) => {
     g1: num(row.g1), g2: num(row.g2), g3: num(row.g3),
     hcp: num(row.hcp),
 
-    // persist per-game blind flags (fallback to legacy boolean)
+    indivPts: (row.indivPts !== undefined && row.indivPts !== null) ? num(row.indivPts) : null,
     blindG1: !!(row.blindG1 ?? legacyAll),
     blindG2: !!(row.blindG2 ?? legacyAll),
     blindG3: !!(row.blindG3 ?? legacyAll),
