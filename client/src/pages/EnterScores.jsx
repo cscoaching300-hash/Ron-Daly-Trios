@@ -557,21 +557,28 @@ export default function EnterScores() {
     away: (teamPoints.away || 0) + singlesTotals.awayPts,
   };
 
-  const clean = rows => rows
-    .filter(r => r.playerId)
-    .map(r => {
-      const mask = r.blindMask || 'none'
-      const blindG1 = mask.includes('1') || mask === 'all'
-      const blindG2 = mask.includes('2') || mask === 'all'
-      const blindG3 = mask.includes('3') || mask === 'all'
-      return {
-        playerId: +r.playerId,
-        g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
-        hcp: num(r.hcp),
-        blindG1, blindG2, blindG3,
-        blind: (mask !== 'none')
-      }
-    })
+const clean = rows => rows
+  .filter(r => r.playerId)
+  .map(r => {
+    const mask = r.blindMask || 'none';
+    const blindG1 = mask.includes('1') || mask === 'all';
+    const blindG2 = mask.includes('2') || mask === 'all';
+    const blindG3 = mask.includes('3') || mask === 'all';
+
+    return {
+      playerId: +r.playerId,
+      g1: num(r.g1), g2: num(r.g2), g3: num(r.g3),
+      hcp: num(r.hcp),
+
+      // ✅ send singles override if present; else send null
+      indivPts: (r.indivPts !== undefined && r.indivPts !== '') ? num(r.indivPts) : null,
+
+      // per-game blind flags + legacy
+      blindG1, blindG2, blindG3,
+      blind: (mask !== 'none'),
+    };
+  });
+
 
   const save = async () => {
     if (!sheet) return alert('Pick week and teams, then Load.')
