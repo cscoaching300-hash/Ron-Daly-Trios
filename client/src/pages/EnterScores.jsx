@@ -77,6 +77,8 @@ function TeamTable({
   teamDraw,
   useHandicap,
   initialRows = 3,
+  // NEW: bubble up the exact singles total shown in this table
+  onSinglesTotalChange,
 }) {
   useEffect(() => {
     if (!values.length) {
@@ -186,6 +188,11 @@ function TeamTable({
     const eff = override !== undefined && override !== '' ? num(override) : (autoSinglesPts[idx] || 0)
     return sum + eff
   }, 0)
+
+  // REPORT singles total to parent (so summary copies it verbatim)
+  useEffect(() => {
+    if (typeof onSinglesTotalChange === 'function') onSinglesTotalChange(singlesTotal)
+  }, [singlesTotal, onSinglesTotalChange])
 
   const addRow = () => setValues(v => [...v, { playerId:'', g1:'', g2:'', g3:'', hcp:0, blindMask:'none', indivPts:'' }])
   const removeRow = (idx) => setValues(v => v.filter((_,i)=>i!==idx))
@@ -369,6 +376,10 @@ export default function EnterScores() {
   const [homeVals, setHomeVals] = useState([])
   const [awayVals, setAwayVals] = useState([])
 
+  // NEW: hold the exact singles totals reported by each table
+  const [homeSingles, setHomeSingles] = useState(0)
+  const [awaySingles, setAwaySingles] = useState(0)
+
   const location = useLocation()
   const [params] = useSearchParams()
 
@@ -432,6 +443,10 @@ export default function EnterScores() {
 
     if (!homeVals.length) setHomeVals(makeBlanks(teamSize))
     if (!awayVals.length) setAwayVals(makeBlanks(teamSize))
+
+    // reset singles mirrors when loading a new sheet
+    setHomeSingles(0)
+    setAwaySingles(0)
   }
 
   const gamesPerWeek = +sheet?.league?.gamesPerWeek || 3
@@ -442,9 +457,7 @@ export default function EnterScores() {
   const useHandicap = (sheet?.league?.mode === 'handicap')
   const teamSize = Math.max(1, Math.min(6, +sheet?.league?.teamSize || 3))
 
-  // processed for summary — DO NOT re-apply 0.9 to blind game scores,
-  // the input cells already hold the blind score. Only reduce the HCP
-  // for the specific blind games.
+  // processed for summary — use entered numbers (blind scores already applied in inputs)
   const processedForSummary = (rows) => rows.map(r => {
     const baseH = num(r.hcp);
     const blindH = Math.floor(baseH * 0.9);
@@ -512,44 +525,15 @@ export default function EnterScores() {
     away: perGame.away + seriesAwayPts
   }
 
-  // --- SUMMARY: Singles points = sum of the per-row Pts shown in each table ---
-  // Uses override if present, else live head-to-head (no series bonus).
-  const singlesTotals = useMemo(() => {
-    const VIRTUAL_BLIND = { g1h: 0, g2h: 0, g3h: 0, blindG1: true, blindG2: true, blindG3: true };
-
-    let homePts = 0, awayPts = 0;
-    const maxRows = Math.max(homeProcessed.length, awayProcessed.length);
-
-    for (let i = 0; i < maxRows; i++) {
-      const aRaw = homeVals[i];
-      const bRaw = awayVals[i];
-
-      const aOverride = (aRaw && aRaw.indivPts !== '' && aRaw.indivPts !== undefined) ? num(aRaw.indivPts) : null;
-      const bOverride = (bRaw && bRaw.indivPts !== '' && bRaw.indivPts !== undefined) ? num(bRaw.indivPts) : null;
-
-      if (aOverride != null || bOverride != null) {
-        if (aOverride != null) homePts += aOverride;
-        if (bOverride != null) awayPts += bOverride;
-        continue;
-      }
-
-      const a = homeProcessed[i] || VIRTUAL_BLIND;
-      const b = awayProcessed[i] || VIRTUAL_BLIND;
-
-      const [a1, b1] = blindAwareOutcome(a.g1h, b.g1h, !!a.blindG1, !!b.blindG1, indivWin, indivDraw);
-      const [a2, b2] = blindAwareOutcome(a.g2h, b.g2h, !!a.blindG2, !!b.blindG2, indivWin, indivDraw);
-      const [a3, b3] = blindAwareOutcome(a.g3h, b.g3h, !!a.blindG3, !!b.blindG3, indivWin, indivDraw);
-
-      homePts += a1 + a2 + a3;
-      awayPts += b1 + b2 + b3;
-    }
-
-    return { homePts, awayPts };
-  }, [homeProcessed, awayProcessed, homeVals, awayVals, indivWin, indivDraw]);
+  // Summary singles = EXACTLY what tables show (mirrored from children)
+  const singlesTotals = {
+    homePts: homeSingles || 0,
+    awayPts: awaySingles || 0,
+  }
 
   const totalPoints = {
-    home: (teamPoints.home || 0) + (singlesTotals.homePts || 0),
-    away: (teamPoints.away || 0) + (singlesTotals.awayPts || 0),
+    home: (teamPoints.home || 0) + singlesTotals.homePts,
+    away: (teamPoints.away || 0) + singlesTotals.awayPts,
   };
 
   const clean = rows => rows
@@ -645,6 +629,7 @@ export default function EnterScores() {
           teamDraw={teamDraw}
           useHandicap={useHandicap}
           initialRows={teamSize}
+          onSinglesTotalChange={setHomeSingles}
         />
         <TeamTable
           title={sheet?.awayTeam?.name || 'Team B'}
@@ -661,6 +646,7 @@ export default function EnterScores() {
           teamDraw={teamDraw}
           useHandicap={useHandicap}
           initialRows={teamSize}
+          onSinglesTotalChange={setAwaySingles}
         />
       </div>
 
@@ -695,3 +681,4 @@ export default function EnterScores() {
     </div>
   )
 }
+
