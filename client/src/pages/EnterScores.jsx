@@ -438,31 +438,37 @@ export default function EnterScores() {
   const useHandicap = (sheet?.league?.mode === 'handicap')
   const teamSize = Math.max(1, Math.min(6, +sheet?.league?.teamSize || 3))
 
-  const processedForSummary = (rows) => rows.map(r => {
-    const baseH = num(r.hcp)
-    const blindH = Math.floor(baseH * 0.9)
-    const mask = r.blindMask || 'none'
+  // processed for summary — DO NOT re-apply 0.9 to blind game scores,
+// the input cells already hold the blind score. Only reduce the HCP
+// for the specific blind games.
+const processedForSummary = (rows) => rows.map(r => {
+  const baseH = num(r.hcp);
+  const blindH = Math.floor(baseH * 0.9);
+  const mask = r.blindMask || 'none';
 
-    const g1s = maskHas(mask, 1) ? Math.floor(num(r.g1) * 0.9) : num(r.g1)
-    const g2s = maskHas(mask, 2) ? Math.floor(num(r.g2) * 0.9) : num(r.g2)
-    const g3s = maskHas(mask, 3) ? Math.floor(num(r.g3) * 0.9) : num(r.g3)
+  // Use the entered numbers as-is (they're already set to blind score if blinded)
+  const g1s = num(r.g1);
+  const g2s = num(r.g2);
+  const g3s = num(r.g3);
 
-    const h1 = maskHas(mask, 1) ? blindH : baseH
-    const h2 = maskHas(mask, 2) ? blindH : baseH
-    const h3 = maskHas(mask, 3) ? blindH : baseH
+  // Per-game handicap reduction only when that game is blinded
+  const h1 = maskHas(mask, 1) ? blindH : baseH;
+  const h2 = maskHas(mask, 2) ? blindH : baseH;
+  const h3 = maskHas(mask, 3) ? blindH : baseH;
 
-    return {
-      ...r,
-      g1s, g2s, g3s,
-      h1, h2, h3,
-      g1h: addIfScore(g1s, h1),
-      g2h: addIfScore(g2s, h2),
-      g3h: addIfScore(g3s, h3),
-      blindG1: maskHas(mask, 1),
-      blindG2: maskHas(mask, 2),
-      blindG3: maskHas(mask, 3),
-    }
-  })
+  return {
+    ...r,
+    g1s, g2s, g3s,
+    h1, h2, h3,
+    g1h: addIfScore(g1s, h1),
+    g2h: addIfScore(g2s, h2),
+    g3h: addIfScore(g3s, h3),
+    blindG1: maskHas(mask, 1),
+    blindG2: maskHas(mask, 2),
+    blindG3: maskHas(mask, 3),
+  };
+});
+
 
   const homeProcessed = processedForSummary(homeVals)
   const awayProcessed = processedForSummary(awayVals)
