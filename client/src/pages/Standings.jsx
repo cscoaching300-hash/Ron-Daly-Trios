@@ -1,6 +1,7 @@
 // client/src/pages/Standings.jsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { getAuthHeaders } from '../lib/auth.js'
+import { getPlayersWithTeams } from '../api'   // NEW
 
 /* ---------- PNG capture (robust) ---------- */
 async function captureStandingsPNG(node) {
@@ -61,6 +62,7 @@ export default function Standings() {
   const [league, setLeague] = useState(null)
   const [teamRows, setTeamRows] = useState([])
   const [playerGroups, setPlayerGroups] = useState([])
+  const [freeAgents, setFreeAgents] = useState([])   // NEW
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -68,10 +70,11 @@ export default function Standings() {
     async function load() {
       try {
         setLoading(true)
-        const [lgRes, teamRes, pRes] = await Promise.all([
+        const [lgRes, teamRes, pRes, pw] = await Promise.all([
           fetch('/api/leagues', { headers: getAuthHeaders() }),
           fetch('/api/standings', { headers: getAuthHeaders() }),
           fetch('/api/standings/players', { headers: getAuthHeaders() }),
+          getPlayersWithTeams(),                      // NEW
         ])
         const leagues = await lgRes.json()
         // prefer the league we’re authenticated as
@@ -90,10 +93,26 @@ export default function Standings() {
 
         const teams = await teamRes.json()
         const pGroups = await pRes.json()
+        const playersWithTeams = Array.isArray(pw) ? pw : []   // NEW
+
+        // derive subs / free agents from playersWithTeams
+        const fa = playersWithTeams.filter(p => {
+          const tName = (p.team_name || '').toLowerCase()
+          return (
+            !p.team_id ||
+            !p.team_name ||
+            tName.includes('sub / free agent') ||
+            tName.includes('subs / free agents') ||
+            tName.includes('sub/free agent') ||
+            tName.includes('free agent')
+          )
+        })
+
         if (!cancel) {
           setLeague(leagueFromToken)
           setTeamRows(Array.isArray(teams) ? teams : [])
           setPlayerGroups(Array.isArray(pGroups) ? pGroups : [])
+          setFreeAgents(fa)                               // NEW
         }
       } finally {
         if (!cancel) setLoading(false)
@@ -103,32 +122,10 @@ export default function Standings() {
     return () => { cancel = true }
   }, [])
 
-  // ---- NEW: split normal team groups vs subs/free-agents group ----
-  const [leftGroups, rightGroups, freeAgentGroup] = useMemo(() => {
-    const normal = []
-    let subs = null
-
-    for (const g of playerGroups) {
-      const name = g?.team?.name || ''
-      const lower = name.toLowerCase()
-      const isSubs =
-        !g?.team?.id || // no team id
-        !name ||
-        lower.includes('sub / free agent') ||
-        lower.includes('sub/free agent') ||
-        lower.includes('subs / free agents') ||
-        lower.includes('free agents')
-
-      if (isSubs && !subs) {
-        subs = g
-      } else {
-        normal.push(g)
-      }
-    }
-
+  const [leftGroups, rightGroups] = useMemo(() => {
     const left = [], right = []
-    normal.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
-    return [left, right, subs]
+    playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
+    return [left, right]
   }, [playerGroups])
 
   /* ---------- Share to Facebook (always website) + PNG download ---------- */
@@ -365,8 +362,8 @@ export default function Standings() {
           </div>
         </section>
 
-        {/* NEW: Subs / Free Agents */}
-        {freeAgentGroup && (
+        {/* Subs / Free Agents */}
+        {freeAgents.length > 0 && (
           <section className="card page-break-avoid">
             <h3 style={{ marginTop:0 }}>Subs / Free Agents</h3>
             <div style={{ overflowX:'auto' }}>
@@ -387,8 +384,8 @@ export default function Standings() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(freeAgentGroup.players || []).map(p => (
-                    <tr key={p.player_id}>
+                  {freeAgents.map(p => (
+                    <tr key={p.id}>
                       <td className="col-name">{p.name}</td>
                       <td data-num="1">{p.hcp}</td>
                       <td data-num="1">{p.ave}</td>
