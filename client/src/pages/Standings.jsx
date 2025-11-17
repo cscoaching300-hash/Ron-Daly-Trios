@@ -75,18 +75,18 @@ export default function Standings() {
         ])
         const leagues = await lgRes.json()
         // prefer the league we’re authenticated as
-let leagueFromToken = null
-try {
-  const saved = JSON.parse(localStorage.getItem('leagueAuth') || 'null')
-  const savedId = saved?.id ? Number(saved.id) : null
-  leagueFromToken =
-    (savedId && leagues.find(l => l.id === savedId)) ||
-    leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) ||
-    leagues[0] ||
-    null
-} catch {
-  leagueFromToken = leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) || leagues[0] || null
-}
+        let leagueFromToken = null
+        try {
+          const saved = JSON.parse(localStorage.getItem('leagueAuth') || 'null')
+          const savedId = saved?.id ? Number(saved.id) : null
+          leagueFromToken =
+            (savedId && leagues.find(l => l.id === savedId)) ||
+            leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) ||
+            leagues[0] ||
+            null
+        } catch {
+          leagueFromToken = leagues.find(l => l.id === Number(getAuthHeaders()['x-league-id'])) || leagues[0] || null
+        }
 
         const teams = await teamRes.json()
         const pGroups = await pRes.json()
@@ -103,10 +103,32 @@ try {
     return () => { cancel = true }
   }, [])
 
-  const [leftGroups, rightGroups] = useMemo(() => {
+  // ---- NEW: split normal team groups vs subs/free-agents group ----
+  const [leftGroups, rightGroups, freeAgentGroup] = useMemo(() => {
+    const normal = []
+    let subs = null
+
+    for (const g of playerGroups) {
+      const name = g?.team?.name || ''
+      const lower = name.toLowerCase()
+      const isSubs =
+        !g?.team?.id || // no team id
+        !name ||
+        lower.includes('sub / free agent') ||
+        lower.includes('sub/free agent') ||
+        lower.includes('subs / free agents') ||
+        lower.includes('free agents')
+
+      if (isSubs && !subs) {
+        subs = g
+      } else {
+        normal.push(g)
+      }
+    }
+
     const left = [], right = []
-    playerGroups.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
-    return [left, right]
+    normal.forEach((g, i) => (i % 2 === 0 ? left : right).push(g))
+    return [left, right, subs]
   }, [playerGroups])
 
   /* ---------- Share to Facebook (always website) + PNG download ---------- */
@@ -342,6 +364,49 @@ try {
             </div>
           </div>
         </section>
+
+        {/* NEW: Subs / Free Agents */}
+        {freeAgentGroup && (
+          <section className="card page-break-avoid">
+            <h3 style={{ marginTop:0 }}>Subs / Free Agents</h3>
+            <div style={{ overflowX:'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th className="col-name">Player</th>
+                    <th data-num="1">Hcp</th>
+                    <th data-num="1">Ave</th>
+                    <th data-num="1">Gms</th>
+                    <th data-num="1">Pts</th>
+                    <th data-num="1">PinsS</th>
+                    <th data-num="1">PinsH</th>
+                    <th data-num="1">HGS</th>
+                    <th data-num="1">HGH</th>
+                    <th data-num="1">HSS</th>
+                    <th data-num="1">HSH</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(freeAgentGroup.players || []).map(p => (
+                    <tr key={p.player_id}>
+                      <td className="col-name">{p.name}</td>
+                      <td data-num="1">{p.hcp}</td>
+                      <td data-num="1">{p.ave}</td>
+                      <td data-num="1">{p.gms}</td>
+                      <td data-num="1" style={{ fontWeight:700 }}>{p.pts}</td>
+                      <td data-num="1">{p.pinss}</td>
+                      <td data-num="1">{p.pinsh}</td>
+                      <td data-num="1">{p.hgs}</td>
+                      <td data-num="1">{p.hgh}</td>
+                      <td data-num="1">{p.hss}</td>
+                      <td data-num="1">{p.hsh}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {/* Controls */}
         <div className="no-print" style={{ display:'flex', gap:8, justifyContent:'flex-end', padding:'6px 0 2px' }}>
